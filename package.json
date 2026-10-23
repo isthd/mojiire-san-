@@ -9,6 +9,7 @@
     "build": "node scripts/copy-mathlive-assets.mjs && tsc -b && vite build",
     "build:artifact": "tsc -b && node scripts/build-artifact.mjs",
     "preview": "vite preview",
+    "deploy": "node scripts/deploy.mjs",
     "test": "vitest run",
     "typecheck": "tsc -b"
   },
@@ -29,6 +30,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "gh-pages": "^6.3.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
