@@ -1,0 +1,98 @@
+@import 'tailwindcss';
+
+:root {
+  --accent: #0a84ff;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Segoe UI',
+    'Meiryo', sans-serif;
+  color: #1d1d1f;
+  background: #f2f2f5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+}
+
+html.large-ui {
+  font-size: 18.5px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+[role='button'] {
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: pointer;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* タッチ操作で遅延なく反応させる */
+.tap {
+  touch-action: manipulation;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 9999px;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.15);
+  transition: transform 0.1s;
+  touch-action: manipulation;
+}
+.swatch:active {
+  transform: scale(0.92);
+}
+/* 選択状態は色だけでなく二重リングで表示 */
+.swatch-active {
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 4px var(--accent);
+}
+
+.range {
+  accent-color: var(--accent);
+  touch-action: pan-y;
+}
+
+/* MathLive 入力欄 */
+math-field.mojiire-mathfield {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 12px;
+  font-size: 26px;
+  border: none;
+  outline: none;
+  border-radius: 12px;
+  background: transparent;
+  --primary: var(--accent);
+}
+math-field.mojiire-mathfield::part(virtual-keyboard-toggle) {
+  color: var(--accent);
+}
+
+input[type='number']::-webkit-inner-spin-button {
+  opacity: 0.4;
+}
