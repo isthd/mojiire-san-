@@ -15,6 +15,12 @@ process.env.CACHE_DIR = path.join(os.tmpdir(), 'gh-pages-mojiire');
 
 const run = (cmd) => execSync(cmd, { stdio: 'inherit' });
 
+const branch = execSync('git branch --show-current').toString().trim();
+if (branch !== 'main') {
+  console.error(`[deploy] いまのブランチは "${branch}" です。main に切り替えてから実行してください: git checkout main`);
+  process.exit(1);
+}
+
 const changed = execSync('git status --porcelain').toString().trim();
 if (changed) {
   const message = process.argv[2] || 'update';
