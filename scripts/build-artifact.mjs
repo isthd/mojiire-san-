@@ -25,7 +25,7 @@ const page = [
   '<title>文字入れさん</title>',
   '<meta name="claude:viewport-fit-sides" content="cover">',
   '<meta name="description" content="プリントや問題集の画像に文字・数式・手書き・図形を書き込める学習用エディター">',
-  '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Klee+One:wght@400;600&family=Zen+Maru+Gothic:wght@400;700&display=swap">',
+  '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Klee+One:wght@400;600&family=Zen+Maru+Gothic:wght@400;700&family=BIZ+UDPGothic:wght@400;700&family=BIZ+UDPMincho:wght@400;700&family=Yomogi&family=Yusei+Magic&family=Mochiy+Pop+One&family=Yuji+Syuku&display=swap">',
   ...styles,
   ...preloads,
   ...scripts,

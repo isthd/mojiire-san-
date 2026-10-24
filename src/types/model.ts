@@ -14,7 +14,17 @@ export type ObjectType =
 
 export type DashStyle = 'solid' | 'dashed' | 'dotted';
 export type TextAlign = 'left' | 'center' | 'right';
-export type FontKey = 'gothic' | 'mincho' | 'maru' | 'kyokasho';
+export type FontKey =
+  | 'gothic'
+  | 'mincho'
+  | 'maru'
+  | 'kyokasho'
+  | 'udGothic'
+  | 'udMincho'
+  | 'tegaki'
+  | 'marker'
+  | 'pop'
+  | 'fude';
 
 interface BaseObject {
   id: string;
@@ -167,6 +177,12 @@ export const FONT_OPTIONS: { key: FontKey; label: string; css: string }[] = [
   },
   { key: 'maru', label: '丸ゴシック', css: '"Zen Maru Gothic","Hiragino Maru Gothic ProN",sans-serif' },
   { key: 'kyokasho', label: '教科書体', css: '"Klee One","UD Digi Kyokasho N-R",serif' },
+  { key: 'udGothic', label: 'UDゴシック', css: '"BIZ UDPGothic","BIZ UDPゴシック",sans-serif' },
+  { key: 'udMincho', label: 'UD明朝', css: '"BIZ UDPMincho","BIZ UDP明朝",serif' },
+  { key: 'tegaki', label: '手書き風', css: '"Yomogi",sans-serif' },
+  { key: 'marker', label: 'マーカー風', css: '"Yusei Magic",sans-serif' },
+  { key: 'pop', label: 'ポップ', css: '"Mochiy Pop One",sans-serif' },
+  { key: 'fude', label: '筆文字', css: '"Yuji Syuku",serif' },
 ];
 
 export function fontCss(key: FontKey): string {

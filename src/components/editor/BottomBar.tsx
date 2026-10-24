@@ -301,7 +301,7 @@ function FontPicker({ value, onChange }: { value: ToolSettings['text']['fontFami
         {current.label}
       </button>
       {open && (
-        <div role="listbox" className="absolute bottom-12 left-0 z-40 w-48 overflow-hidden rounded-xl border border-neutral-200 bg-white py-1 shadow-xl">
+        <div role="listbox" className="absolute bottom-12 left-0 z-40 max-h-[60vh] w-52 overflow-y-auto overscroll-contain rounded-xl border border-neutral-200 bg-white py-1 shadow-xl">
           {FONT_OPTIONS.map((f) => (
             <button
               key={f.key}
