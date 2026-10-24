@@ -4,7 +4,9 @@ import { Check, CloudOff, Ellipsis, Loader2, Redo2, Undo2, X } from 'lucide-reac
 import { useEffect, useRef, useState } from 'react';
 import { fitToScreen, zoomBy, zoomTo } from '../../canvas/viewActions';
 import { updateProjectMeta } from '../../storage/projectRepo';
+import type { SaveTarget } from '../../storage/projectFolder';
 import { useEditor } from '../../store/editorStore';
+import { SaveToFolderDialog } from '../home/SaveToFolderDialog';
 import { IconButton, PromptDialog } from '../ui/primitives';
 
 export function TopBar({ onHome, onAddImages }: { onHome: () => void; onAddImages: () => void }) {
@@ -20,6 +22,7 @@ export function TopBar({ onHome, onAddImages }: { onHome: () => void; onAddImage
   const hasPages = useEditor((s) => s.history.present.pages.length > 0);
   const [menu, setMenu] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [saveTarget, setSaveTarget] = useState<SaveTarget | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,6 +39,10 @@ export function TopBar({ onHome, onAddImages }: { onHome: () => void; onAddImage
     { label: '縮小', action: () => zoomBy(0.8), needsPage: true },
     { label: '100%で表示', action: () => zoomTo(1), needsPage: true },
     { label: '名前を変更', action: () => setRenaming(true) },
+    {
+      label: 'フォルダとして保存（iCloud・OneDrive）',
+      action: () => projectId && setSaveTarget({ projectIds: [projectId], label: name }),
+    },
     { label: '設定', action: () => setModal('settings') },
   ];
 
@@ -68,7 +75,7 @@ export function TopBar({ onHome, onAddImages }: { onHome: () => void; onAddImage
           <Ellipsis size={22} />
         </IconButton>
         {menu && (
-          <div className="absolute top-12 right-0 z-30 w-56 overflow-hidden rounded-xl border border-neutral-200 bg-white py-1 shadow-xl">
+          <div className="absolute top-12 right-0 z-30 w-72 overflow-hidden rounded-xl border border-neutral-200 bg-white py-1 shadow-xl">
             {hasPages && <div className="px-4 pt-1.5 pb-1 text-[12px] text-neutral-500 tabular-nums">表示倍率 {Math.round(zoom * 100)}%</div>}
             {items
               .filter((i) => !i.needsPage || hasPages)
@@ -97,6 +104,7 @@ export function TopBar({ onHome, onAddImages }: { onHome: () => void; onAddImage
         保存
       </button>
 
+      <SaveToFolderDialog target={saveTarget} onClose={() => setSaveTarget(null)} />
       <PromptDialog
         open={renaming}
         title="名前を変更"

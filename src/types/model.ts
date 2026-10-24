@@ -152,6 +152,15 @@ export interface ProjectMeta {
   updatedAt: number;
   pageCount: number;
   thumbnail: Blob | null;
+  /** 入っているフォルダ（アプリ内の整理用）。未分類は null／なし */
+  folderId?: string | null;
+}
+
+/** アプリ内でプロジェクトを整理するためのフォルダ（1階層） */
+export interface Folder {
+  id: string;
+  name: string;
+  createdAt: number;
 }
 
 export const ERASABLE_TYPES: ReadonlySet<ObjectType> = new Set<ObjectType>([
