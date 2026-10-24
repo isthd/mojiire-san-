@@ -1,4 +1,4 @@
-// 上部バー（文字入れくん風）：左に ✕（ホームへ）、右に「保存」。
+// 上部バー：左に ✕（ホームへ）、右に「保存」。
 // 元に戻す・やり直すと、その他の操作（画像追加・ズーム・設定など）は控えめに配置。
 import { Check, CloudOff, Ellipsis, Loader2, Redo2, Undo2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';

@@ -1,4 +1,4 @@
-// 画面下部の操作バー（文字入れくん風）。
+// 画面下部の操作バー。
 // ・何も選択していないとき：［描く］［回答欄］（⊕ 文字を追加）［画像］
 // ・オブジェクト選択中：アイコンのタブ＋設定欄＋ゴミ箱
 // ・描画ツール使用中：ツール一覧＋色・太さ＋［完了］
@@ -190,7 +190,7 @@ function SwatchRow({
   );
 }
 
-/** 透明度の選択（文字入れくんの「透明度」パネル相当） */
+/** 透明度の選択パネル */
 function OpacityChips({ value, onChange, label }: { value: number; onChange: (v: number) => void; label: string }) {
   const options = [1, 0.75, 0.5, 0.25];
   return (
