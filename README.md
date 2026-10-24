@@ -51,6 +51,10 @@ npm run dev
 
 公開先：https://isthd.github.io/mojiire-san-/
 
+**自動公開**：`main` ブランチが更新されると（プルリクエストのマージや push）、GitHub Actions が自動でテスト・ビルドして公開します（`.github/workflows/deploy.yml`）。手作業は不要です。進み具合は GitHub の「Actions」タブで確認でき、同じ画面の「Run workflow」から手動でも実行できます。
+
+手元から直接公開したいときは、次のコマンドも使えます。
+
 ```bash
 npm run deploy
 ```
