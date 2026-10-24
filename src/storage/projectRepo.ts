@@ -13,10 +13,22 @@ export async function getProjectMeta(id: string): Promise<ProjectMeta | undefine
   return (await getDB()).get('projects', id);
 }
 
-export async function createProject(name: string, doc: ProjectDoc = { pages: [] }): Promise<ProjectMeta> {
+export async function createProject(
+  name: string,
+  doc: ProjectDoc = { pages: [] },
+  folderId: string | null = null,
+): Promise<ProjectMeta> {
   const db = await getDB();
   const now = Date.now();
-  const meta: ProjectMeta = { id: uid(), name, createdAt: now, updatedAt: now, pageCount: doc.pages.length, thumbnail: null };
+  const meta: ProjectMeta = {
+    id: uid(),
+    name,
+    createdAt: now,
+    updatedAt: now,
+    pageCount: doc.pages.length,
+    thumbnail: null,
+    folderId,
+  };
   const tx = db.transaction(['projects', 'documents'], 'readwrite');
   await tx.objectStore('projects').put(meta);
   await tx.objectStore('documents').put({ projectId: meta.id, version: 1, doc });
