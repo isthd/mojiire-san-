@@ -58,6 +58,15 @@ export interface TextObject extends BaseObject {
   /** 未入力の枠（「ダブルタップで入力」）の表示サイズ。回答欄に自動配置したときは欄の大きさ */
   fieldWidth?: number;
   fieldHeight?: number;
+  /** 入力時に漢字へ変換した語とその読み（文字数を読みで数えるため。例: 邪悪 → じゃあく） */
+  readings?: TextReading[];
+}
+
+export interface TextReading {
+  /** 変換後の表記 */
+  s: string;
+  /** 変換前に入力した読み（かな） */
+  r: string;
 }
 
 /** 文字が未入力のテキスト枠（編集画面では「ダブルタップで入力」の枠として表示し、書き出しには含めない） */

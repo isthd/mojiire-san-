@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countChars } from './charCount';
+import { addReading, countChars, countReadingChars, isKana } from './charCount';
 
 describe('countChars', () => {
   it('空文字は0', () => {
@@ -20,5 +20,30 @@ describe('countChars', () => {
     expect(countChars('👍🏻')).toBe(1);
     expect(countChars('が')).toBe(1);
     expect(countChars('𠮷野家')).toBe(3);
+  });
+});
+
+describe('countReadingChars', () => {
+  it('変換した語は読みの文字数で数える', () => {
+    const r = addReading(undefined, '邪悪', 'じゃあく');
+    expect(countReadingChars('邪悪', r)).toBe(4);
+    expect(countReadingChars('邪悪な心', addReading(r, '心', 'こころ'))).toBe(8);
+  });
+
+  it('読みがなければ表記どおり', () => {
+    expect(countReadingChars('邪悪', undefined)).toBe(2);
+    expect(countReadingChars('邪', addReading(undefined, '邪悪', 'じゃあく'))).toBe(1);
+  });
+
+  it('長い表記を優先する', () => {
+    const r = addReading(addReading(undefined, '魔王', 'まおう'), '邪悪な魔王', 'じゃあくなまおう');
+    expect(countReadingChars('邪悪な魔王と魔王', r)).toBe(12);
+  });
+
+  it('かな判定', () => {
+    expect(isKana('じゃあく')).toBe(true);
+    expect(isKana('カタカナー')).toBe(true);
+    expect(isKana('じゃあk')).toBe(false);
+    expect(isKana('邪悪')).toBe(false);
   });
 });

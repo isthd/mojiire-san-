@@ -4,7 +4,7 @@ import { Sigma } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { measureText } from '../../canvas/describe';
 import { registerTextArea } from '../../canvas/textEditController';
-import { countChars } from '../../lib/charCount';
+import { addReading, countChars, countReadingChars, isKana } from '../../lib/charCount';
 import { useEditor } from '../../store/editorStore';
 import { useSettings } from '../../store/settingsStore';
 import { fontCss } from '../../types/model';
@@ -12,6 +12,8 @@ import { cx } from '../ui/primitives';
 
 export function TextInputModal() {
   const ref = useRef<HTMLTextAreaElement>(null);
+  // 変換中（IME）に最後に表示されていた「かなだけ」の文字列。漢字に変換されたときの読みとして使う
+  const lastKana = useRef('');
   const te = useEditor((s) => s.textEdit);
   const updateTextDraft = useEditor((s) => s.updateTextDraft);
   const commitTextEdit = useEditor((s) => s.commitTextEdit);
@@ -28,7 +30,25 @@ export function TextInputModal() {
 
   const obj = te?.obj;
   const vertical = !!obj?.vertical;
-  const charCount = countChars(obj?.text ?? '');
+  const text = obj?.text ?? '';
+  // 漢字に変換した語は読みの文字数で数える（例: 邪悪 → じゃあく で4文字）
+  const charCount = countReadingChars(text, obj?.readings);
+  const plainCount = countChars(text);
+
+  const onCompositionStart = () => {
+    lastKana.current = '';
+  };
+  const onCompositionUpdate = (e: React.CompositionEvent<HTMLTextAreaElement>) => {
+    if (e.data && isKana(e.data)) lastKana.current = e.data;
+  };
+  const onCompositionEnd = (e: React.CompositionEvent<HTMLTextAreaElement>) => {
+    const committed = e.data;
+    const reading = lastKana.current;
+    lastKana.current = '';
+    if (!committed || !reading || isKana(committed) || committed === reading) return;
+    const cur = useEditor.getState().textEdit?.obj;
+    updateTextDraft({ readings: addReading(cur?.readings, committed, reading) });
+  };
 
   const done = () => commitTextEdit({ select: true });
 
@@ -135,6 +155,9 @@ export function TextInputModal() {
             fontSize: 22, // iOS で入力時に画面が拡大されないよう 16px 以上
           }}
           onInput={(e) => updateTextDraft({ text: e.currentTarget.value })}
+          onCompositionStart={onCompositionStart}
+          onCompositionUpdate={onCompositionUpdate}
+          onCompositionEnd={onCompositionEnd}
           onKeyDown={(e) => {
             e.stopPropagation();
             if (e.nativeEvent.isComposing || e.keyCode === 229) return;
@@ -149,6 +172,7 @@ export function TextInputModal() {
           className="flex h-8 shrink-0 items-center justify-end border-t border-neutral-100 px-4 text-[13px] tabular-nums text-neutral-500"
         >
           {charCount}文字
+          {charCount !== plainCount && <span className="ml-2 text-neutral-400">（表記 {plainCount}文字）</span>}
         </div>
       </div>
     </div>
