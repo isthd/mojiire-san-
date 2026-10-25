@@ -48,7 +48,7 @@ import {
 } from '../../storage/projectRepo';
 import { toast } from '../../store/toastStore';
 import type { Folder, ProjectMeta } from '../../types/model';
-import { Button, ConfirmDialog, cx, IconButton, PromptDialog } from '../ui/primitives';
+import { Button, ConfirmDialog, cx, IconButton, MenuPopover, PromptDialog } from '../ui/primitives';
 import { MoveDialog } from './MoveDialog';
 import { OrganizeDialog } from './OrganizeDialog';
 import { SaveToFolderDialog } from './SaveToFolderDialog';
@@ -167,6 +167,7 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
   const [sort, setSortState] = useState<Sort>(() => loadPref<Sort>('mojiire.home.sort', 'updated'));
   const [query, setQuery] = useState('');
   const [menuId, setMenuId] = useState<string | null>(null);
+  const menuAnchor = useRef<HTMLDivElement>(null);
   const [renameTarget, setRenameTarget] = useState<ProjectMeta | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProjectMeta | null>(null);
   const [selecting, setSelecting] = useState(false);
@@ -725,7 +726,7 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
                 </span>
               )}
               {!selecting && (
-              <div data-menu className="absolute right-1.5 bottom-[52px]">
+              <div data-menu className="absolute right-1.5 bottom-[52px]" ref={menuId === p.id ? menuAnchor : undefined}>
                 <IconButton
                   label="メニュー"
                   className="h-9 w-9 bg-white/90 shadow ring-1 ring-neutral-200"
@@ -734,7 +735,7 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
                   <Ellipsis size={18} />
                 </IconButton>
                 {menuId === p.id && (
-                  <div className="absolute right-0 bottom-11 z-20 w-56 overflow-hidden rounded-xl border border-neutral-200 bg-white py-1 shadow-xl">
+                  <MenuPopover anchor={menuAnchor} width={224}>
                     {[
                       { label: '開く', icon: FolderOpen, action: () => onOpen(p.id) },
                       { label: '名前を変更', icon: Pencil, action: () => setRenameTarget(p) },
@@ -770,7 +771,7 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
                         <item.icon size={17} /> {item.label}
                       </button>
                     ))}
-                  </div>
+                  </MenuPopover>
                 )}
               </div>
               )}

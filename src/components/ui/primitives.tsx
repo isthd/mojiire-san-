@@ -1,6 +1,7 @@
 // 汎用UI部品
 import { X } from 'lucide-react';
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 
 export function cx(...c: (string | false | null | undefined)[]): string {
   return c.filter(Boolean).join(' ');
@@ -32,6 +33,89 @@ export function IconButton({ label, active, showLabel, children, className, ...r
       {children}
       {showLabel && <span className="text-[13px] font-medium whitespace-nowrap">{label}</span>}
     </button>
+  );
+}
+
+/**
+ * ボタンから開くメニュー。画面からはみ出さないよう、
+ * 下に入らなければ上に開き、左右も画面内に収め、それでも高すぎるときはスクロールさせる。
+ * body 直下に描くので、親要素の overflow やヘッダーに隠れない。
+ * 外側タップの判定用に data-menu を付ける。
+ */
+export function MenuPopover({
+  anchor,
+  width,
+  className,
+  children,
+}: {
+  anchor: RefObject<HTMLElement | null>;
+  width: number;
+  className?: string;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
+
+  useLayoutEffect(() => {
+    let raf = 0;
+    const place = () => {
+      const a = anchor.current;
+      const el = ref.current;
+      // 親の ref がまだ付いていない初回は次のフレームで測る
+      if (!a || !el) {
+        raf = requestAnimationFrame(place);
+        return;
+      }
+      const margin = 8;
+      const gap = 4;
+      const vv = window.visualViewport;
+      const vw = vv?.width ?? window.innerWidth;
+      const vh = vv?.height ?? window.innerHeight;
+      const r = a.getBoundingClientRect();
+      const h = el.scrollHeight;
+      const below = vh - r.bottom - gap - margin;
+      const above = r.top - gap - margin;
+      let top: number;
+      let maxHeight: number;
+      if (h <= below || below >= above) {
+        top = r.bottom + gap;
+        maxHeight = below;
+      } else {
+        maxHeight = above;
+        top = r.top - gap - Math.min(h, above);
+      }
+      const w = Math.min(width, vw - margin * 2);
+      const left = Math.min(Math.max(r.right - w, margin), vw - w - margin);
+      setPos({ top, left, maxHeight });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    window.visualViewport?.addEventListener('resize', place);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+      window.visualViewport?.removeEventListener('resize', place);
+    };
+  }, [anchor, width]);
+
+  return createPortal(
+    <div
+      ref={ref}
+      data-menu
+      className={cx('fixed z-50 overflow-y-auto overscroll-contain rounded-xl border border-neutral-200 bg-white py-1 shadow-xl', className)}
+      style={{
+        width: `min(${width}px, calc(100vw - 16px))`,
+        top: pos?.top ?? 0,
+        left: pos?.left ?? 0,
+        maxHeight: pos?.maxHeight,
+        visibility: pos ? 'visible' : 'hidden',
+      }}
+    >
+      {children}
+    </div>,
+    document.body,
   );
 }
 

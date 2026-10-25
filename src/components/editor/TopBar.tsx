@@ -7,7 +7,7 @@ import { updateProjectMeta } from '../../storage/projectRepo';
 import type { SaveTarget } from '../../storage/projectFolder';
 import { useEditor } from '../../store/editorStore';
 import { SaveToFolderDialog } from '../home/SaveToFolderDialog';
-import { IconButton, PromptDialog } from '../ui/primitives';
+import { IconButton, MenuPopover, PromptDialog } from '../ui/primitives';
 
 export function TopBar({ onHome, onAddImages }: { onHome: () => void; onAddImages: () => void }) {
   const canUndo = useEditor((s) => s.history.past.length > 0);
@@ -27,7 +27,10 @@ export function TopBar({ onHome, onAddImages }: { onHome: () => void; onAddImage
 
   useEffect(() => {
     if (!menu) return;
-    const close = (e: PointerEvent) => !menuRef.current?.contains(e.target as Node) && setMenu(false);
+    const close = (e: PointerEvent) => {
+      const t = e.target as HTMLElement;
+      if (!menuRef.current?.contains(t) && !t.closest('[data-menu]')) setMenu(false);
+    };
     window.addEventListener('pointerdown', close);
     return () => window.removeEventListener('pointerdown', close);
   }, [menu]);
@@ -75,7 +78,7 @@ export function TopBar({ onHome, onAddImages }: { onHome: () => void; onAddImage
           <Ellipsis size={22} />
         </IconButton>
         {menu && (
-          <div className="absolute top-12 right-0 z-30 w-72 overflow-hidden rounded-xl border border-neutral-200 bg-white py-1 shadow-xl">
+          <MenuPopover anchor={menuRef} width={288}>
             {hasPages && <div className="px-4 pt-1.5 pb-1 text-[12px] text-neutral-500 tabular-nums">表示倍率 {Math.round(zoom * 100)}%</div>}
             {items
               .filter((i) => !i.needsPage || hasPages)
@@ -92,7 +95,7 @@ export function TopBar({ onHome, onAddImages }: { onHome: () => void; onAddImage
                   {i.label}
                 </button>
               ))}
-          </div>
+          </MenuPopover>
         )}
       </div>
       <button
