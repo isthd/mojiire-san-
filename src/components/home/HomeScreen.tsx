@@ -14,6 +14,7 @@ import {
   FolderPlus,
   ImagePlus,
   Inbox,
+  Megaphone,
   Pencil,
   Plus,
   Search,
@@ -47,6 +48,7 @@ import {
   updateProjectMeta,
 } from '../../storage/projectRepo';
 import { toast } from '../../store/toastStore';
+import { openAllNews } from '../ui/NewsDialog';
 import type { Folder, ProjectMeta } from '../../types/model';
 import { Button, ConfirmDialog, cx, IconButton, MenuPopover, PromptDialog } from '../ui/primitives';
 import { MoveDialog } from './MoveDialog';
@@ -463,6 +465,9 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
             <p className="hidden text-xs text-neutral-500 sm:block">プリントに文字・数式・手書き・図形を書き込む学習用エディター</p>
           </div>
           <div className="flex-1" />
+          <IconButton label="お知らせ" onClick={openAllNews} className="h-11 w-11">
+            <Megaphone size={21} />
+          </IconButton>
           <div ref={importMenuRef} className="relative">
             <Button className="h-11 max-sm:px-3" onClick={() => setImportMenu(!importMenu)} aria-expanded={importMenu}>
               <FileUp size={18} />

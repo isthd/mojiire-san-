@@ -7,6 +7,7 @@ import { updateProjectMeta } from '../../storage/projectRepo';
 import type { SaveTarget } from '../../storage/projectFolder';
 import { useEditor } from '../../store/editorStore';
 import { SaveToFolderDialog } from '../home/SaveToFolderDialog';
+import { openAllNews } from '../ui/NewsDialog';
 import { IconButton, MenuPopover, PromptDialog } from '../ui/primitives';
 
 export function TopBar({ onHome, onAddImages }: { onHome: () => void; onAddImages: () => void }) {
@@ -48,6 +49,7 @@ export function TopBar({ onHome, onAddImages }: { onHome: () => void; onAddImage
       action: () => projectId && setSaveTarget({ projectIds: [projectId], label: name }),
     },
     { label: '設定', action: () => setModal('settings') },
+    { label: 'お知らせ', action: openAllNews },
   ];
 
   return (

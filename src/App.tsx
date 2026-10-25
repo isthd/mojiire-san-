@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Editor } from './components/editor/Editor';
 import { HomeScreen } from './components/home/HomeScreen';
+import { NewsDialog } from './components/ui/NewsDialog';
 import { Toasts } from './components/ui/Overlays';
 import { useSettings } from './store/settingsStore';
 
@@ -35,6 +36,7 @@ export default function App() {
     <>
       {projectId ? <Editor key={projectId} projectId={projectId} onHome={home} /> : <HomeScreen onOpen={open} />}
       <Toasts />
+      <NewsDialog />
     </>
   );
 }
