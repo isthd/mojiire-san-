@@ -132,11 +132,12 @@ export function EditorCanvas() {
     return () => ro.disconnect();
   }, []);
 
-  // ページ切り替え時に画面に合わせる
+  // ページ切り替え時・画像の差し替え（切り抜きなど）で大きさが変わったときに画面に合わせる
   useEffect(() => {
     if (!page || !size.width || !size.height) return;
-    if (fittedPage.current !== page.id) {
-      fittedPage.current = page.id;
+    const key = `${page.id}:${page.width}x${page.height}`;
+    if (fittedPage.current !== key) {
+      fittedPage.current = key;
       viewport.autoFit = true;
       fitToScreen();
     }

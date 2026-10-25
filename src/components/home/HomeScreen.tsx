@@ -268,23 +268,23 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
   const createFromImages = async (list: FileList | File[] | null) => {
     const files = pickImageFiles(list);
     if (!files.length) return;
-    setBusy('画像を読み込み中…');
+    setBusy('読み込み中…');
     try {
       const name = files[0].name.replace(/\.[^.]+$/, '') || defaultName();
       const meta = await createProject(name, undefined, targetFolderId);
-      const { pages, failed } = await importImageFiles(meta.id, files);
+      const { pages, failed } = await importImageFiles(meta.id, files, (p) => setBusy(p.message));
       if (!pages.length) {
         // 1枚も読み込めなかった場合は空のプロジェクトを残さない
         await deleteProject(meta.id);
-        toast(`画像を読み込めませんでした：${failed.join('、')}（PNG・JPEG・WebP に対応）`, 'error');
+        toast(`画像を読み込めませんでした：${failed.join('、')}（PNG・JPEG・WebP・PDF に対応）`, 'error');
         return;
       }
       await saveDocument(meta.id, { pages });
-      if (failed.length) toast(`読み込めなかった画像があります：${failed.join('、')}`, 'error');
+      if (failed.length) toast(`読み込めなかったファイルがあります：${failed.join('、')}`, 'error');
       onOpen(meta.id);
     } catch (e) {
       console.error(e);
-      toast('画像の読み込みに失敗しました', 'error');
+      toast('読み込みに失敗しました', 'error');
     } finally {
       setBusy(null);
     }
@@ -516,7 +516,7 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
             <span className="min-w-0">
               <span className="block text-[17px] font-semibold">画像から新規作成</span>
               <span className="block truncate text-[13px] opacity-85">
-                {currentFolder ? `「${currentFolder.name}」に作成（複数可）` : 'プリントや問題集の写真を選ぶ（複数可）'}
+                {currentFolder ? `「${currentFolder.name}」に作成（複数可）` : 'プリントや問題集の写真・PDFを選ぶ（複数可）'}
               </span>
             </span>
           </button>

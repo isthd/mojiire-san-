@@ -36,7 +36,8 @@ export function TopBar({ onHome, onAddImages }: { onHome: () => void; onAddImage
   }, [menu]);
 
   const items = [
-    { label: '画像（ページ）を追加', action: onAddImages },
+    { label: '画像・PDF（ページ）を追加', action: onAddImages },
+    { label: '切り抜き・まっすぐにする', action: () => setModal('crop'), needsPage: true },
     { label: '画面に合わせる', action: fitToScreen, needsPage: true },
     { label: '拡大', action: () => zoomBy(1.25), needsPage: true },
     { label: '縮小', action: () => zoomBy(0.8), needsPage: true },

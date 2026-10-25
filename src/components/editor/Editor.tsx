@@ -11,6 +11,7 @@ import { useEditor } from '../../store/editorStore';
 import { BusyOverlay } from '../ui/Overlays';
 import { Button, cx } from '../ui/primitives';
 import { addImagesToProject } from './addImages';
+import { CropDialog } from './CropDialog';
 import { ExportDialog } from './ExportDialog';
 // 数式エディター（MathLive）は大きいので遅延読み込み。起動後の空き時間に先読みしておく。
 const loadMathEditor = () => import('./MathEditorDialog');
@@ -122,9 +123,9 @@ export function Editor({ projectId, onHome }: { projectId: string; onHome: () =>
                   </span>
                   <span className="text-[17px] font-semibold">画像を追加</span>
                   <span className="text-[13px] leading-relaxed text-neutral-500">
-                    プリント・教科書・問題集の写真を選択
+                    プリント・教科書・問題集の写真や PDF を選択
                     <br />
-                    ドラッグ＆ドロップ、Ctrl+V での貼り付けにも対応（PNG・JPEG・WebP）
+                    ドラッグ＆ドロップ、Ctrl+V での貼り付けにも対応（PNG・JPEG・WebP・PDF）
                   </span>
                 </button>
               </div>
@@ -157,6 +158,7 @@ export function Editor({ projectId, onHome }: { projectId: string; onHome: () =>
         </Suspense>
       )}
       <ExportDialog />
+      <CropDialog />
       <SettingsDialog />
       <BusyOverlay />
     </div>

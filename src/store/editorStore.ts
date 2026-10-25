@@ -34,7 +34,7 @@ export interface MathEditState {
   initialLatex: string;
 }
 
-export type ModalType = 'export' | 'settings' | null;
+export type ModalType = 'export' | 'settings' | 'crop' | null;
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 interface EditorState {
@@ -72,6 +72,8 @@ interface EditorState {
   addPages: (pages: Page[]) => void;
   removePage: (id: string) => void;
   movePage: (id: string, delta: number) => void;
+  /** ページの画像を差し替える（切り抜き・傾き補正）。元に戻せる */
+  replacePage: (page: Page) => void;
 
   // オブジェクト
   addObject: (obj: EditorObject, opts?: { select?: boolean }) => void;
@@ -231,6 +233,12 @@ export const useEditor = create<EditorState>()((set, get) => {
         ...withHistory({ ...s, currentPageId: next }, pushHistory(s.history, { ...s.history.present, pages })),
         selectedIds: [],
       });
+    },
+    replacePage: (page) => {
+      get().commitTextEdit();
+      const s = get();
+      const doc = mapPage(s.history.present, page.id, () => page);
+      set({ ...withHistory(s, pushHistory(s.history, doc)), selectedIds: [] });
     },
     movePage: (id, delta) => {
       const s = get();
