@@ -1,9 +1,9 @@
 // 文字の入力画面。上部に「横書き／縦書き／数式を入力」と「完了」。
 // 入力欄は常に DOM に置いておき、タップ処理の中で同期的にフォーカスする（iPad でキーボードを出すため）。
 import { Sigma } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { measureText } from '../../canvas/describe';
-import { registerTextArea } from '../../canvas/textEditController';
+import { refreshCaret, registerTextArea } from '../../canvas/textEditController';
 import { addReading, countChars, countReadingChars, isKana } from '../../lib/charCount';
 import { useEditor } from '../../store/editorStore';
 import { useSettings } from '../../store/settingsStore';
@@ -14,6 +14,8 @@ export function TextInputModal() {
   const ref = useRef<HTMLTextAreaElement>(null);
   // 変換中（IME）に最後に表示されていた「かなだけ」の文字列。漢字に変換されたときの読みとして使う
   const lastKana = useRef('');
+  // IME で変換中かどうか（変換中に選択位置を動かすと変換が途切れるため）
+  const composing = useRef(false);
   const te = useEditor((s) => s.textEdit);
   const updateTextDraft = useEditor((s) => s.updateTextDraft);
   const commitTextEdit = useEditor((s) => s.commitTextEdit);
@@ -30,18 +32,42 @@ export function TextInputModal() {
 
   const obj = te?.obj;
   const vertical = !!obj?.vertical;
+  const open = !!obj;
+  const fontFamily = obj?.fontFamily;
+  const bold = !!obj?.bold;
+  const italic = !!obj?.italic;
+
+  // iPad では入力欄を隠した状態でフォーカスするため、表示されたあとにカーソルの大きさを描き直す。
+  // フォントの読み込みが終わったときも同じ。
+  useLayoutEffect(() => {
+    if (!open) return;
+    const refresh = () => {
+      if (!composing.current) refreshCaret();
+    };
+    const raf = requestAnimationFrame(refresh);
+    let alive = true;
+    document.fonts?.ready.then(() => {
+      if (alive) requestAnimationFrame(refresh);
+    });
+    return () => {
+      alive = false;
+      cancelAnimationFrame(raf);
+    };
+  }, [open, vertical, fontFamily, bold, italic]);
   const text = obj?.text ?? '';
   // 漢字に変換した語は読みの文字数で数える（例: 邪悪 → じゃあく で4文字）
   const charCount = countReadingChars(text, obj?.readings);
   const plainCount = countChars(text);
 
   const onCompositionStart = () => {
+    composing.current = true;
     lastKana.current = '';
   };
   const onCompositionUpdate = (e: React.CompositionEvent<HTMLTextAreaElement>) => {
     if (e.data && isKana(e.data)) lastKana.current = e.data;
   };
   const onCompositionEnd = (e: React.CompositionEvent<HTMLTextAreaElement>) => {
+    composing.current = false;
     const committed = e.data;
     const reading = lastKana.current;
     lastKana.current = '';
