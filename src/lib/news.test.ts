@@ -24,4 +24,10 @@ describe('unseenNews', () => {
       }
     }
   });
+
+  it('各お知らせに新機能か不具合修正のどちらかがある', () => {
+    for (const n of NEWS) {
+      expect(n.features.length + (n.fixes?.length ?? 0)).toBeGreaterThan(0);
+    }
+  });
 });

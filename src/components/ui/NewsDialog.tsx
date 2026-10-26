@@ -1,5 +1,5 @@
-// 新機能のお知らせ。起動時にまだ見ていない新機能があれば表示し、ホームや「…」からも見返せる。
-import { MousePointerClick, Sparkles } from 'lucide-react';
+// 新機能・不具合修正のお知らせ。起動時にまだ見ていない項目があれば表示し、ホームや「…」からも見返せる。
+import { MousePointerClick, Sparkles, Wrench } from 'lucide-react';
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { LATEST_NEWS_ID, readSeenNews, unseenNews, writeSeenNews, type NewsEntry } from '../../lib/news';
@@ -28,7 +28,7 @@ export const useNews = create<NewsState>()((set) => ({
 /** すべてのお知らせを開く */
 export const openAllNews = () => useNews.getState().show(unseenNews(-Infinity), false);
 
-/** 起動時に一度だけ：まだ見ていない新機能があれば表示する */
+/** 起動時に一度だけ：まだ見ていないお知らせがあれば表示する */
 async function showUnseenOnStartup() {
   let seen = readSeenNews();
   if (seen === null) {
@@ -50,6 +50,7 @@ export function NewsDialog() {
   const entries = useNews((s) => s.entries);
   const fresh = useNews((s) => s.fresh);
   const close = useNews((s) => s.close);
+  const hasFeatures = !!entries?.some((n) => n.features.length > 0);
 
   useEffect(() => {
     void showUnseenOnStartup();
@@ -58,7 +59,7 @@ export function NewsDialog() {
   return (
     <Modal
       open={!!entries}
-      title={fresh ? '新しい機能が使えるようになりました' : 'お知らせ'}
+      title={fresh ? (hasFeatures ? '新しい機能が使えるようになりました' : 'アップデートのお知らせ') : 'お知らせ'}
       onClose={close}
       footer={<Button onClick={close}>OK</Button>}
     >
@@ -90,6 +91,19 @@ export function NewsDialog() {
                   </ul>
                 </div>
               ))}
+              {n.fixes && n.fixes.length > 0 && (
+                <div className="rounded-xl bg-neutral-50 p-4 ring-1 ring-neutral-200">
+                  <h3 className="mb-2 flex items-center gap-2 text-[16px] font-semibold">
+                    <Wrench size={18} className="shrink-0 text-neutral-500" />
+                    不具合の修正
+                  </h3>
+                  <ul className="list-disc space-y-1 pl-5 text-[14px] leading-relaxed">
+                    {n.fixes.map((t) => (
+                      <li key={t}>{t}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </section>
         ))}
