@@ -431,6 +431,23 @@ export const COLOR_SWATCHES = [
 
 export const HIGHLIGHT_SWATCHES = ['#ffe14d', '#ff9ec7', '#8ef0a0', '#8fd3ff', '#ffbb66', '#d6a8ff'];
 
+/** 「色なし」を選ぶボタン（点線の丸に「なし」と表示） */
+export function NoneSwatch({ active, onClick, className }: { active: boolean; onClick: () => void; className?: string }) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={active}
+      aria-label="なし"
+      title="色なし"
+      onClick={onClick}
+      className={cx('swatch swatch-none flex items-center justify-center bg-white text-[11px] font-semibold text-neutral-500', active && 'swatch-active', className)}
+    >
+      なし
+    </button>
+  );
+}
+
 export function ColorPicker({
   value,
   onChange,
@@ -447,22 +464,7 @@ export function ColorPicker({
   const custom = value && !swatches.includes(value.toLowerCase()) ? value : null;
   return (
     <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-2">
-      {allowNone && (
-        <button
-          type="button"
-          role="radio"
-          aria-checked={value === null}
-          aria-label="なし"
-          title="なし"
-          onClick={() => onChange(null)}
-          className={cx(
-            'swatch relative overflow-hidden bg-white',
-            value === null && 'swatch-active',
-          )}
-        >
-          <span className="absolute top-1/2 left-1/2 h-[2px] w-[130%] -translate-x-1/2 -translate-y-1/2 rotate-45 bg-[#ff3b30]" />
-        </button>
-      )}
+      {allowNone && <NoneSwatch active={value === null} onClick={() => onChange(null)} />}
       {swatches.map((c) => (
         <button
           key={c}

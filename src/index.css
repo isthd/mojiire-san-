@@ -64,6 +64,11 @@ input:focus-visible {
 .swatch:active {
   transform: scale(0.92);
 }
+/* 「色なし」は点線の丸で、色の丸と見分けやすくする */
+.swatch-none {
+  box-shadow: none;
+  border: 1.5px dashed #a1a1a6;
+}
 /* 選択状態は色だけでなく二重リングで表示 */
 .swatch-active {
   box-shadow:

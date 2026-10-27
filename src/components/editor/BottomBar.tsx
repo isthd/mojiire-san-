@@ -38,7 +38,7 @@ import { addTextAtCenter } from '../../canvas/textEditController';
 import { currentPageOf, selectedObjects, useEditor, type ToolType } from '../../store/editorStore';
 import { useSettings, type ToolSettings, type ToolSettingsKey } from '../../store/settingsStore';
 import { FONT_OPTIONS, isRuledText, type DashStyle, type EditorObject, type TextObject } from '../../types/model';
-import { COLOR_SWATCHES, cx, HIGHLIGHT_SWATCHES, IconButton } from '../ui/primitives';
+import { COLOR_SWATCHES, cx, HIGHLIGHT_SWATCHES, IconButton, NoneSwatch } from '../ui/primitives';
 
 // ===== 小さな部品 =====
 
@@ -147,19 +147,7 @@ function SwatchRow({
 }) {
   return (
     <div role="radiogroup" aria-label={label} className="no-scrollbar flex min-w-0 flex-1 items-center gap-2.5 overflow-x-auto px-1 py-1.5">
-      {allowNone && (
-        <button
-          type="button"
-          role="radio"
-          aria-checked={value === null}
-          aria-label="なし"
-          title="なし"
-          onClick={() => onChange(null)}
-          className={cx('swatch relative shrink-0 overflow-hidden bg-white', value === null && 'swatch-active')}
-        >
-          <span className="absolute top-1/2 left-1/2 h-[2px] w-[130%] -translate-x-1/2 -translate-y-1/2 rotate-45 bg-[#ff3b30]" />
-        </button>
-      )}
+      {allowNone && <NoneSwatch active={value === null} onClick={() => onChange(null)} className="shrink-0" />}
       {colors.map((c) => (
         <button
           key={c}
