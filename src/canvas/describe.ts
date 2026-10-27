@@ -3,8 +3,15 @@
 // 画面表示と書き出し結果が一致する。
 import Konva from 'konva';
 import { withAlpha } from '../lib/color';
-import { DEFAULT_LINE_HEIGHT, fontCss, type DashStyle, type EditorObject, type TextObject } from '../types/model';
-import { layoutVertical, punctuationOffset } from './verticalText';
+import {
+  DEFAULT_LINE_HEIGHT,
+  fontCss,
+  isRuledText,
+  type DashStyle,
+  type EditorObject,
+  type TextObject,
+} from '../types/model';
+import { layoutVertical, punctuationOffset, wrapVertical, type VerticalLayout } from './verticalText';
 
 export type NodeKind = 'Group' | 'Rect' | 'Ellipse' | 'Line' | 'Arrow' | 'Text' | 'Image' | 'Shape';
 
@@ -21,12 +28,15 @@ export interface DescribeContext {
   hitPad: number;
   /** 未入力のテキスト枠を「ダブルタップで入力」として表示する（編集画面のみ。書き出しでは表示しない） */
   placeholder?: boolean;
+  /** 選択中（罫線テキストボックスの線の目安を表示する。編集画面のみ） */
+  selected?: boolean;
 }
 
 export const PLACEHOLDER_LABEL = 'ダブルタップで入力';
 
 /** 未入力のテキスト枠の表示サイズ（画像px） */
 export function placeholderSize(o: TextObject): { width: number; height: number } {
+  if (isRuledText(o)) return { width: o.boxWidth, height: o.boxHeight };
   if (o.fieldWidth && o.fieldHeight) return { width: o.fieldWidth, height: o.fieldHeight };
   const line = o.fontSize * lineHeightOf(o) + textPadding(o) * 2;
   return o.vertical ? { width: line, height: o.fontSize * 6 } : { width: o.fontSize * 6, height: line };
@@ -151,6 +161,7 @@ let measurer: Konva.Text | null = null;
 
 /** テキストの表示サイズ（画像px）を計測 */
 export function measureText(o: TextObject): { width: number; height: number } {
+  if (isRuledText(o)) return { width: o.boxWidth, height: o.boxHeight };
   if (o.vertical) {
     const l = verticalLayoutOf(o);
     return { width: l.width, height: l.height };
@@ -161,8 +172,7 @@ export function measureText(o: TextObject): { width: number; height: number } {
 }
 
 /** 縦書きテキストを描く Konva.Shape の設定 */
-function verticalTextConfig(o: TextObject): Record<string, unknown> {
-  const l = verticalLayoutOf(o);
+function verticalTextConfig(o: TextObject, l: VerticalLayout = verticalLayoutOf(o)): Record<string, unknown> {
   const font = `${fontStyleOf(o)} ${o.fontSize}px ${fontCss(o.fontFamily)}`;
   const outline = hasOutline(o) ? outlineStyle(o) : undefined;
   return {
@@ -199,6 +209,147 @@ function verticalTextConfig(o: TextObject): Record<string, unknown> {
   };
 }
 
+type RuledText = TextObject & { ruleGap: number; boxWidth: number; boxHeight: number };
+
+/** 罫線テキストボックスの行（縦書きは列）の数 */
+function ruledCount(o: RuledText): number {
+  // 枠の外に線がはみ出さないよう切り捨て
+  return Math.max(1, Math.floor((o.vertical ? o.boxWidth : o.boxHeight) / o.ruleGap + 1e-3));
+}
+
+/** 罫線の位置に線を引く Shape（color: 線の色、guide: 編集画面の目安の線） */
+function ruleLinesNode(o: RuledText, color: string, guide: boolean): NodeDesc {
+  const n = ruledCount(o);
+  const w = guide ? Math.max(1, o.ruleGap * 0.025) : Math.max(1, o.ruleGap * 0.035);
+  return {
+    kind: 'Shape',
+    config: {
+      listening: false,
+      sceneFunc: (context: Konva.Context) => {
+        const ctx = (context as unknown as { _context: CanvasRenderingContext2D })._context;
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = w;
+        if (guide) ctx.setLineDash([w * 5, w * 4]);
+        ctx.beginPath();
+        for (let k = 0; k <= n; k++) {
+          if (o.vertical) {
+            const x = o.boxWidth - k * o.ruleGap;
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, o.boxHeight);
+          } else {
+            const y = k * o.ruleGap;
+            ctx.moveTo(0, y);
+            ctx.lineTo(o.boxWidth, y);
+          }
+        }
+        ctx.stroke();
+        ctx.restore();
+      },
+    },
+  };
+}
+
+/** 文字を罫線の間に並べる（横書きは行の下側の線に少し寄せる） */
+function ruledTextNodes(o: RuledText): NodeDesc[] {
+  const fs = o.fontSize;
+  const gap = o.ruleGap;
+  if (o.vertical) {
+    const inset = Math.min(fs * 0.4, o.boxHeight * 0.05);
+    const ls = o.letterSpacing ?? 0;
+    const perCol = (o.boxHeight - inset * 2 + fs * ls) / (fs * (1 + ls));
+    const l = layoutVertical({
+      text: wrapVertical(o.text, perCol),
+      fontSize: fs,
+      letterSpacing: ls,
+      lineHeight: gap / fs,
+      padding: 0,
+      align: o.align,
+    });
+    // 1列目を枠の右端の列に合わせる。上下揃えは枠の高さの中で行う
+    const k = o.align === 'center' ? 0.5 : o.align === 'right' ? 1 : 0;
+    const dy = inset + Math.max(0, o.boxHeight - inset * 2 - l.height) * k;
+    return [{ kind: 'Shape', config: { ...verticalTextConfig(o, l), x: o.boxWidth - l.width, y: dy } }];
+  }
+  const inset = Math.min(fs * 0.3, o.boxWidth * 0.05);
+  return [
+    {
+      kind: 'Text',
+      config: {
+        ...textConfig(o),
+        x: inset,
+        y: Math.max(0, (gap - fs) * 0.3),
+        width: Math.max(fs, o.boxWidth - inset * 2),
+        wrap: 'char',
+        lineHeight: gap / fs,
+        padding: 0,
+      },
+    },
+  ];
+}
+
+function ruledNodes(o: RuledText, ctx: DescribeContext): NodeDesc[] {
+  const empty = o.text.trim() === '';
+  if (empty && !ctx.placeholder) return [];
+  const out: NodeDesc[] = [
+    // 枠のどこを触っても選べるように（見えない当たり判定）
+    { kind: 'Rect', config: { width: o.boxWidth, height: o.boxHeight, fill: 'rgba(0,0,0,0)' } },
+  ];
+  if (o.background && !empty) {
+    out.push({
+      kind: 'Rect',
+      config: { width: o.boxWidth, height: o.boxHeight, fill: withAlpha(o.background, o.backgroundOpacity ?? 1) },
+    });
+  }
+  if (o.ruleColor) out.push(ruleLinesNode(o, o.ruleColor, false));
+  else if (ctx.placeholder && (empty || ctx.selected)) out.push(ruleLinesNode(o, 'rgba(10,132,255,0.6)', true));
+  if (empty) {
+    out.push({
+      kind: 'Rect',
+      config: { width: o.boxWidth, height: o.boxHeight, fill: 'rgba(10,132,255,0.06)', listening: false },
+    });
+    const fs = Math.min(o.ruleGap * 0.45, (o.vertical ? o.boxHeight : o.boxWidth) / (PLACEHOLDER_LABEL.length + 2));
+    out.push(
+      o.vertical
+        ? {
+            kind: 'Shape',
+            config: {
+              listening: false,
+              sceneFunc: (context: Konva.Context) => {
+                const c = (context as unknown as { _context: CanvasRenderingContext2D })._context;
+                c.font = `${fs}px ${fontCss('gothic')}`;
+                c.textAlign = 'center';
+                c.textBaseline = 'middle';
+                c.fillStyle = '#0a84ff';
+                const chars = [...PLACEHOLDER_LABEL];
+                const cx = o.boxWidth - o.ruleGap / 2;
+                const top = (o.boxHeight - chars.length * fs) / 2;
+                chars.forEach((ch, i) => c.fillText(ch, cx, top + fs * (i + 0.5)));
+              },
+            },
+          }
+        : {
+            kind: 'Text',
+            config: {
+              text: PLACEHOLDER_LABEL,
+              width: o.boxWidth,
+              height: o.ruleGap,
+              align: 'center',
+              verticalAlign: 'middle',
+              wrap: 'none',
+              fontSize: fs,
+              fontFamily: fontCss('gothic'),
+              fill: '#0a84ff',
+              listening: false,
+            },
+          },
+    );
+    return out;
+  }
+  out.push(...ruledTextNodes(o));
+  return out;
+}
+
 export function dashArray(dash: DashStyle, w: number): number[] | undefined {
   if (dash === 'dashed') return [w * 3, w * 2];
   if (dash === 'dotted') return [0.001, w * 2];
@@ -215,6 +366,10 @@ export function describeObject(o: EditorObject, ctx: DescribeContext): NodeDesc 
 
   switch (o.type) {
     case 'text': {
+      if (isRuledText(o)) {
+        children.push(...ruledNodes(o, ctx));
+        break;
+      }
       if (o.text.trim() === '') {
         if (ctx.placeholder) children.push(...placeholderNodes(o));
         break;

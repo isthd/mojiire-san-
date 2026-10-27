@@ -42,6 +42,29 @@ export function createText(at: Point, s: ToolSettings['text'], unit: number): Te
   };
 }
 
+/** 罫線（便箋）テキストボックス。rect は枠、gap は1行（縦書きは1列）の幅 */
+export function createRuledText(
+  rect: { x: number; y: number; width: number; height: number },
+  gap: number,
+  s: ToolSettings['text'],
+  unit: number,
+): TextObject {
+  return {
+    ...createText({ x: 0, y: 0 }, s, unit),
+    x: rect.x,
+    y: rect.y,
+    fontSize: round(gap * RULED_FONT_RATIO),
+    align: 'left',
+    ruleGap: round(gap),
+    boxWidth: round(rect.width),
+    boxHeight: round(rect.height),
+    ruleColor: null,
+  };
+}
+
+/** 罫線テキストボックスの文字の大きさ（行の幅に対する比率）の既定値 */
+export const RULED_FONT_RATIO = 0.6;
+
 export function createMath(
   at: Point,
   latex: string,

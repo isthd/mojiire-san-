@@ -13,6 +13,7 @@ import {
   ImagePlus,
   Minus,
   MoveUpRight,
+  NotebookPen,
   PaintBucket,
   Palette,
   Pen,
@@ -20,6 +21,7 @@ import {
   Pencil,
   Plus,
   RotateCw,
+  ScanLine,
   ScanText,
   Square,
   Trash2,
@@ -31,10 +33,11 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { autoPlaceAnswerFields } from '../../canvas/autoFields';
 import { objectPatchFromSettings, settingsFromObject, settingsKeyFor } from '../../canvas/objectFactory';
+import { refitRuledBox } from '../../canvas/ruleFit';
 import { addTextAtCenter } from '../../canvas/textEditController';
 import { currentPageOf, selectedObjects, useEditor, type ToolType } from '../../store/editorStore';
 import { useSettings, type ToolSettings, type ToolSettingsKey } from '../../store/settingsStore';
-import { FONT_OPTIONS, type DashStyle, type EditorObject } from '../../types/model';
+import { FONT_OPTIONS, isRuledText, type DashStyle, type EditorObject, type TextObject } from '../../types/model';
 import { COLOR_SWATCHES, cx, HIGHLIGHT_SWATCHES, IconButton } from '../ui/primitives';
 
 // ===== 小さな部品 =====
@@ -341,6 +344,7 @@ const TEXT_TABS: Tab[] = [
   { key: 'outline', label: '縁取り', icon: Baseline },
   { key: 'rotate', label: '回転', icon: RotateCw },
 ];
+const RULED_TEXT_TABS: Tab[] = [{ key: 'rule', label: '便箋の線', icon: NotebookPen }, ...TEXT_TABS];
 const MATH_TABS: Tab[] = [
   { key: 'edit', label: '数式を編集', icon: Pencil },
   { key: 'color', label: '色', icon: Palette },
@@ -364,7 +368,7 @@ const SHAPE_TABS: Tab[] = [
 function tabsFor(o: EditorObject): Tab[] {
   switch (o.type) {
     case 'text':
-      return TEXT_TABS;
+      return isRuledText(o) ? RULED_TEXT_TABS : TEXT_TABS;
     case 'math':
       return MATH_TABS;
     case 'pen':
@@ -400,6 +404,35 @@ function RotateControl({ obj }: { obj: EditorObject }) {
   );
 }
 
+const RULE_COLORS = ['#9db4d6', '#c9c9c9', '#7a7a7a', '#e8a0a8', '#a8d5a2', '#000000'];
+
+/** 罫線テキストボックスの設定：行の幅・写真の線に合わせる・線を引く */
+function RuleControl({ obj, unit }: { obj: TextObject & { ruleGap: number }; unit: number }) {
+  const update = (patch: Partial<TextObject>) =>
+    useEditor.getState().updateObjects({ [obj.id]: patch }, `rule-${obj.id}-${Object.keys(patch).join()}`);
+  const setGap = (g: number) => {
+    const gap = g * unit;
+    // 文字の大きさも行の幅に合わせて変える
+    update({ ruleGap: gap, fontSize: obj.fontSize * (gap / obj.ruleGap) });
+  };
+  return (
+    <>
+      <Stepper label={obj.vertical ? '列の幅' : '行の幅'} value={obj.ruleGap / unit} step={0.5} min={4} max={400} onChange={setGap} />
+      <button
+        type="button"
+        onClick={() => void refitRuledBox(obj.id)}
+        className="tap flex h-10 items-center gap-1.5 rounded-xl bg-neutral-100 px-3 text-[14px] font-medium text-[#0a84ff] hover:bg-neutral-200"
+      >
+        <ScanLine size={17} aria-hidden /> 写真の線に合わせる
+      </button>
+      <Switch label="線を引く" checked={!!obj.ruleColor} onChange={(on) => update({ ruleColor: on ? RULE_COLORS[0] : null })} />
+      {obj.ruleColor && (
+        <SwatchRow label="線の色" colors={RULE_COLORS} value={obj.ruleColor} onChange={(c) => c && update({ ruleColor: c })} />
+      )}
+    </>
+  );
+}
+
 function ObjectInspector({ obj }: { obj: EditorObject }) {
   const tabs = tabsFor(obj);
   const [tabKey, setTabKey] = useState(tabs[0].key);
@@ -419,6 +452,7 @@ function ObjectInspector({ obj }: { obj: EditorObject }) {
 
   let content: ReactNode = null;
   if (tab.key === 'rotate') content = <RotateControl obj={obj} />;
+  else if (tab.key === 'rule' && isRuledText(obj)) content = <RuleControl obj={obj} unit={unit} />;
   else if (obj.type === 'text') {
     const t = v as ToolSettings['text'];
     if (tab.key === 'font')
@@ -447,7 +481,10 @@ function ObjectInspector({ obj }: { obj: EditorObject }) {
       content = (
         <>
           <Stepper label="文字の間隔" value={t.letterSpacing} step={0.1} min={-0.3} max={2} onChange={(letterSpacing) => change({ letterSpacing })} suffix="x" />
-          <Stepper label="行の間隔" value={t.lineHeight} step={0.1} min={0.8} max={4} onChange={(lineHeight) => change({ lineHeight })} suffix="x" />
+          {/* 罫線テキストボックスの行の間隔は「便箋の線」の行の幅で決まる */}
+          {!isRuledText(obj) && (
+            <Stepper label="行の間隔" value={t.lineHeight} step={0.1} min={0.8} max={4} onChange={(lineHeight) => change({ lineHeight })} suffix="x" />
+          )}
           <Chips
             label="揃え"
             value={t.align}
@@ -706,6 +743,41 @@ function DrawBar() {
   );
 }
 
+// ===== 便箋（罫線テキストボックス）を置く =====
+
+function RuledBar() {
+  const setTool = useEditor((s) => s.setTool);
+  const vertical = useSettings((s) => s.tools.text.vertical);
+  const setSetting = useSettings((s) => s.setTool);
+  return (
+    <div>
+      <div className="flex h-12 items-center gap-2 border-b border-neutral-200 px-3">
+        <NotebookPen size={20} className="shrink-0 text-[#0a84ff]" aria-hidden />
+        <span className="min-w-0 flex-1 text-[14px] font-medium">便箋の線に合わせて書く</span>
+        <button
+          type="button"
+          onClick={() => setTool('select')}
+          className="tap h-10 shrink-0 rounded-lg px-3 text-[15px] font-semibold text-[#0a84ff] hover:bg-[#0a84ff]/10"
+        >
+          やめる
+        </button>
+      </div>
+      <div className="flex min-h-[56px] flex-wrap items-center gap-x-4 gap-y-2 px-3 pt-1 pb-2">
+        <span className="text-[13px] text-neutral-600">文字を書く範囲をなぞって囲むと、写真の罫線に合わせた文字枠を置きます</span>
+        <Chips
+          label="向き"
+          value={vertical ? 'v' : 'h'}
+          onChange={(d) => setSetting('text', { vertical: d === 'v' })}
+          options={[
+            { value: 'h', label: '横書き' },
+            { value: 'v', label: '縦書き' },
+          ]}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ===== 何も選択していないとき =====
 
 function IdleBar({ onAddImages }: { onAddImages: () => void }) {
@@ -741,14 +813,25 @@ function IdleBar({ onAddImages }: { onAddImages: () => void }) {
       >
         <Plus size={30} strokeWidth={2.4} />
       </button>
-      <button
-        type="button"
-        onClick={onAddImages}
-        className="tap flex h-12 flex-col items-center justify-center rounded-xl px-3 text-neutral-700 hover:bg-neutral-100"
-      >
-        <ImagePlus size={22} aria-hidden />
-        <span className="text-[11px] font-medium">画像を追加</span>
-      </button>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          title="便箋・ノートの罫線に合わせて文字を書く枠を置く"
+          onClick={() => setTool('ruled')}
+          className="tap flex h-12 flex-col items-center justify-center rounded-xl px-2.5 text-neutral-700 hover:bg-neutral-100"
+        >
+          <NotebookPen size={22} aria-hidden />
+          <span className="text-[11px] font-medium">便箋</span>
+        </button>
+        <button
+          type="button"
+          onClick={onAddImages}
+          className="tap flex h-12 flex-col items-center justify-center rounded-xl px-2.5 text-neutral-700 hover:bg-neutral-100"
+        >
+          <ImagePlus size={22} aria-hidden />
+          <span className="text-[11px] font-medium">画像を追加</span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -760,7 +843,8 @@ export function BottomBar({ onAddImages }: { onAddImages: () => void }) {
   if (!hasPages) return null;
 
   let body: ReactNode;
-  if (tool !== 'select' && tool !== 'hand' && tool !== 'text' && tool !== 'math') body = <DrawBar />;
+  if (tool === 'ruled') body = <RuledBar />;
+  else if (tool !== 'select' && tool !== 'hand' && tool !== 'text' && tool !== 'math') body = <DrawBar />;
   else if (objs.length === 1) body = <ObjectInspector key={objs[0].id} obj={objs[0]} />;
   else if (objs.length > 1) body = <MultiInspector ids={objs.map((o) => o.id)} />;
   else body = <IdleBar onAddImages={onAddImages} />;

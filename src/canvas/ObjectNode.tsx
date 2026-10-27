@@ -47,16 +47,18 @@ interface Props {
   hitPad: number;
   hidden: boolean;
   draggable: boolean;
+  /** 選択中（罫線テキストボックスの線の目安を出す） */
+  selected?: boolean;
   /** フォント読み込み後の再計測用 */
   epoch: number;
 }
 
-export const ObjectNode = memo(function ObjectNode({ obj, hitPad, hidden, draggable, epoch }: Props) {
+export const ObjectNode = memo(function ObjectNode({ obj, hitPad, hidden, draggable, selected, epoch }: Props) {
   const mathImage = useMathImage(obj);
   const desc = useMemo(
-    () => describeObject(obj, { mathImage, hitPad, placeholder: true }),
+    () => describeObject(obj, { mathImage, hitPad, placeholder: true, selected }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [obj, mathImage, hitPad, epoch],
+    [obj, mathImage, hitPad, selected, epoch],
   );
   return (
     <Group {...desc.config} visible={!hidden} draggable={draggable && !obj.locked}>

@@ -7,17 +7,18 @@ import { usePageImage } from '../hooks/usePageImage';
 import { rectFromPoints, screenToImage, simplifyPoints, snapAngle, zoomAt, type Point, type View } from '../lib/geometry';
 import { currentPageOf, useEditor, type ToolType } from '../store/editorStore';
 import { useSettings } from '../store/settingsStore';
-import { ERASABLE_TYPES, type EditorObject, type LineObject, type StrokeObject } from '../types/model';
+import { ERASABLE_TYPES, isRuledText, type EditorObject, type LineObject, type StrokeObject } from '../types/model';
 import { buildNode, describeObject } from './describe';
 import { createLine, createShape, createStroke, createText, settingsFromObject, settingsKeyFor } from './objectFactory';
 import { ObjectNode } from './ObjectNode';
+import { placeRuledBox } from './ruleFit';
 import { beginTextEdit } from './textEditController';
 import { bakeTransform } from './transformBake';
 import { fitToScreen, setUserView, viewport } from './viewActions';
 
 Konva.dragDistance = 4;
 
-type ShapeTool = 'line' | 'arrow' | 'rect' | 'ellipse' | 'triangle' | 'hl-line';
+type ShapeTool = 'line' | 'arrow' | 'rect' | 'ellipse' | 'triangle' | 'hl-line' | 'ruled';
 
 type Gesture =
   | { kind: 'none' }
@@ -38,7 +39,7 @@ type Gesture =
   | { kind: 'erase'; id: number; key: string; erased: Set<string>; lastScreen: Point }
   | { kind: 'tap'; id: number; tool: 'text' | 'math'; startScreen: Point; view0: View };
 
-const DRAW_TOOLS = new Set<ToolType>(['pen', 'highlighter', 'line', 'arrow', 'rect', 'ellipse', 'triangle', 'eraser', 'text', 'math']);
+const DRAW_TOOLS = new Set<ToolType>(['pen', 'highlighter', 'line', 'arrow', 'rect', 'ellipse', 'triangle', 'ruled', 'eraser', 'text', 'math']);
 const SHAPE_TOOLS = new Set<ToolType>(['line', 'arrow', 'rect', 'ellipse', 'triangle']);
 
 const CURSORS: Record<ToolType, string> = {
@@ -52,6 +53,7 @@ const CURSORS: Record<ToolType, string> = {
   rect: 'crosshair',
   ellipse: 'crosshair',
   triangle: 'crosshair',
+  ruled: 'crosshair',
   eraser: 'cell',
   hand: 'grab',
 };
@@ -85,6 +87,17 @@ function draftObjectFor(g: Extract<Gesture, { kind: 'shape' }>, unit: number): E
       return createStroke('highlighter', [g.start.x, g.start.y, end.x, end.y], settings.highlighter, unit);
     }
     return createLine(g.tool, g.start, end, settings, unit);
+  }
+  if (g.tool === 'ruled') {
+    // 便箋の範囲：青い点線の四角で表示
+    return {
+      ...createShape('rect', rectFromPoints(g.start, g.cur, false), settings.shape, unit),
+      strokeColor: '#0a84ff',
+      strokeWidth: 2 * unit,
+      fill: '#0a84ff',
+      fillOpacity: 0.08,
+      dash: 'dashed',
+    };
   }
   const square = g.shift;
   return createShape(g.tool, rectFromPoints(g.start, g.cur, square), settings.shape, unit);
@@ -390,6 +403,7 @@ export function EditorCanvas() {
         case 'rect':
         case 'ellipse':
         case 'triangle':
+        case 'ruled':
           if (hitUi) return;
           if (st.selectedIds.length) st.select([]);
           gesture.current = { kind: 'shape', id: e.pointerId, tool: st.tool, start: img, startScreen: p, cur: img, shift: e.shiftKey };
@@ -539,6 +553,10 @@ export function EditorCanvas() {
           if (!pg) break;
           if (Math.hypot(p.x - g.startScreen.x, p.y - g.startScreen.y) < 4) break; // タップだけなら作成しない
           g.cur = screenToImage(p, st.view);
+          if (g.tool === 'ruled') {
+            void placeRuledBox(rectFromPoints(g.start, g.cur, false));
+            break;
+          }
           const obj = draftObjectFor(g, pg.unit);
           st.addObject(obj, { select: g.tool !== 'hl-line' });
           break;
@@ -603,7 +621,9 @@ export function EditorCanvas() {
       !showHandles || singleLine
         ? []
         : selectedIds.map((id) => layer.findOne('#' + id)).filter((n): n is Konva.Node => !!n);
-    const allShapes = selectedObjs.length > 0 && selectedObjs.every((o) => ['rect', 'ellipse', 'triangle'].includes(o.type));
+    // 図形と罫線テキストボックスは縦横別々に大きさを変えられる
+    const allShapes =
+      selectedObjs.length > 0 && selectedObjs.every((o) => ['rect', 'ellipse', 'triangle'].includes(o.type) || isRuledText(o));
     tr.nodes(nodes);
     tr.keepRatio(!allShapes);
     tr.enabledAnchors(
@@ -729,6 +749,7 @@ export function EditorCanvas() {
                 hitPad={hitPad}
                 hidden={o.id === editingId}
                 draggable={tool === 'select'}
+                selected={selectedIds.includes(o.id)}
                 epoch={epoch}
               />
             ))}

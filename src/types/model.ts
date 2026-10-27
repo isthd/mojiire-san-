@@ -70,6 +70,21 @@ export interface TextObject extends BaseObject {
   fieldHeight?: number;
   /** 入力時に漢字へ変換した語とその読み（文字数を読みで数えるため。例: 邪悪 → じゃあく） */
   readings?: TextReading[];
+  /**
+   * 罫線（便箋）テキストボックス：1行の幅（画像px。縦書きは1列の幅）。
+   * 指定があると、文字は枠（boxWidth×boxHeight）の中で自動で折り返し、1行ずつ罫線の間に並ぶ。
+   */
+  ruleGap?: number;
+  /** 罫線テキストボックスの枠の大きさ（画像px） */
+  boxWidth?: number;
+  boxHeight?: number;
+  /** 罫線を描く色（null／なし = 描かない。写真の便箋の線をそのまま使う） */
+  ruleColor?: string | null;
+}
+
+/** 罫線（便箋）テキストボックスか */
+export function isRuledText(o: EditorObject): o is TextObject & { ruleGap: number; boxWidth: number; boxHeight: number } {
+  return o.type === 'text' && !!o.ruleGap && !!o.boxWidth && !!o.boxHeight;
 }
 
 export interface TextReading {

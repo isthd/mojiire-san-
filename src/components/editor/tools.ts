@@ -6,6 +6,7 @@ import {
   Minus,
   MousePointer2,
   MoveUpRight,
+  NotebookPen,
   Pen,
   Sigma,
   Square,
@@ -34,6 +35,7 @@ export const TOOLS: ToolDef[] = [
   { id: 'rect', label: '四角形', icon: Square, key: 'r' },
   { id: 'ellipse', label: '円・楕円', icon: Circle, key: 'o' },
   { id: 'triangle', label: '三角形', icon: Triangle, key: 'g' },
+  { id: 'ruled', label: '便箋（罫線テキスト）', icon: NotebookPen },
   { id: 'eraser', label: '消しゴム', icon: Eraser, key: 'e' },
   { id: 'hand', label: '手のひら（キャンバス移動）', icon: Hand },
 ];

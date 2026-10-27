@@ -63,3 +63,18 @@ export function layoutVertical(input: VerticalLayoutInput): VerticalLayout {
   });
   return { glyphs, width, height };
 }
+
+/** 縦書きで1列に入る文字数ごとに改行を入れる（罫線テキストボックスの折り返し） */
+export function wrapVertical(text: string, perColumn: number): string {
+  const n = Math.max(1, Math.floor(perColumn));
+  return text
+    .split('\n')
+    .map((line) => {
+      const chars = [...line];
+      if (chars.length <= n) return line;
+      const out: string[] = [];
+      for (let i = 0; i < chars.length; i += n) out.push(chars.slice(i, i + n).join(''));
+      return out.join('\n');
+    })
+    .join('\n');
+}

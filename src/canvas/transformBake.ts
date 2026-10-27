@@ -37,6 +37,13 @@ export function bakeTransform(
   const base = { x: t.x, y: t.y, rotation: t.rotation };
   switch (obj.type) {
     case 'text':
+      // 罫線テキストボックスは枠の大きさだけを変える（文字の大きさ・行の幅はそのまま）
+      if (obj.ruleGap && obj.boxWidth && obj.boxHeight) {
+        return {
+          patch: { ...base, boxWidth: Math.max(1, obj.boxWidth * sx), boxHeight: Math.max(1, obj.boxHeight * sy) },
+          node: { ...base, scaleX: 1, scaleY: 1 },
+        };
+      }
       return {
         patch: {
           ...base,

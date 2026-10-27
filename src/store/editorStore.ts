@@ -17,6 +17,8 @@ export type ToolType =
   | 'rect'
   | 'ellipse'
   | 'triangle'
+  /** 罫線（便箋）テキストボックスを置く範囲をなぞる */
+  | 'ruled'
   | 'eraser'
   | 'hand';
 

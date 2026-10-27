@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layoutVertical } from './verticalText';
+import { layoutVertical, wrapVertical } from './verticalText';
 
 const base = { fontSize: 20, letterSpacing: 0, lineHeight: 1.5, padding: 0, align: 'left' as const };
 
@@ -29,5 +29,12 @@ describe('layoutVertical', () => {
     expect(l.height).toBe(50); // 20*1.5*2 - 20*0.5
     const u = l.glyphs.find((g) => g.ch === 'う')!;
     expect(u.cy).toBe(40); // 下揃え：2文字目の位置
+  });
+});
+
+describe('wrapVertical', () => {
+  it('1列の文字数で折り返す', () => {
+    expect(wrapVertical('あいうえおか\nき', 4)).toBe('あいうえ\nおか\nき');
+    expect(wrapVertical('あい', 0.5)).toBe('あ\nい');
   });
 });
