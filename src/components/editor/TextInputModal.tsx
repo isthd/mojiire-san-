@@ -9,6 +9,7 @@ import { useEditor } from '../../store/editorStore';
 import { useSettings } from '../../store/settingsStore';
 import { fontCss } from '../../types/model';
 import { cx } from '../ui/primitives';
+import { VerticalCaret } from './VerticalCaret';
 
 export function TextInputModal() {
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -161,38 +162,43 @@ export function TextInputModal() {
             完了
           </button>
         </div>
-        <textarea
-          ref={ref}
-          aria-label="テキストを入力"
-          placeholder="ここに文字を入力"
-          spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
-          tabIndex={obj ? 0 : -1}
-          className="min-h-0 w-full flex-1 resize-none overflow-auto bg-white p-4 text-neutral-900 outline-none placeholder:text-neutral-400"
-          style={{
-            writingMode: vertical ? 'vertical-rl' : 'horizontal-tb',
-            textOrientation: 'mixed',
-            // font の一括指定と fontSize を混ぜると再描画時に文字サイズが消えることがあるため個別に指定
-            fontFamily: obj ? fontCss(obj.fontFamily) : undefined,
-            fontWeight: obj?.bold ? 'bold' : 'normal',
-            fontStyle: obj?.italic ? 'italic' : 'normal',
-            lineHeight: 1.6,
-            fontSize: 22, // iOS で入力時に画面が拡大されないよう 16px 以上
-          }}
-          onInput={(e) => updateTextDraft({ text: e.currentTarget.value })}
-          onCompositionStart={onCompositionStart}
-          onCompositionUpdate={onCompositionUpdate}
-          onCompositionEnd={onCompositionEnd}
-          onKeyDown={(e) => {
-            e.stopPropagation();
-            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-            if ((e.key === 'Enter' && (e.ctrlKey || e.metaKey)) || e.key === 'Escape') {
-              e.preventDefault();
-              done();
-            }
-          }}
-        />
+        <div className="relative min-h-0 flex-1">
+          <textarea
+            ref={ref}
+            aria-label="テキストを入力"
+            placeholder="ここに文字を入力"
+            spellCheck={false}
+            autoCapitalize="off"
+            autoCorrect="off"
+            tabIndex={obj ? 0 : -1}
+            className="block h-full w-full resize-none overflow-auto bg-white p-4 text-neutral-900 outline-none placeholder:text-neutral-400"
+            style={{
+              writingMode: vertical ? 'vertical-rl' : 'horizontal-tb',
+              textOrientation: 'mixed',
+              // font の一括指定と fontSize を混ぜると再描画時に文字サイズが消えることがあるため個別に指定
+              fontFamily: obj ? fontCss(obj.fontFamily) : undefined,
+              fontWeight: obj?.bold ? 'bold' : 'normal',
+              fontStyle: obj?.italic ? 'italic' : 'normal',
+              lineHeight: 1.6,
+              fontSize: 22, // iOS で入力時に画面が拡大されないよう 16px 以上
+              // 縦書きでは iPad の本来のカーソルが小さく・ずれて出るため透明にして、VerticalCaret で描く
+              caretColor: vertical ? 'transparent' : undefined,
+            }}
+            onInput={(e) => updateTextDraft({ text: e.currentTarget.value })}
+            onCompositionStart={onCompositionStart}
+            onCompositionUpdate={onCompositionUpdate}
+            onCompositionEnd={onCompositionEnd}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+              if ((e.key === 'Enter' && (e.ctrlKey || e.metaKey)) || e.key === 'Escape') {
+                e.preventDefault();
+                done();
+              }
+            }}
+          />
+          {vertical && <VerticalCaret textareaRef={ref} deps={[open, fontFamily, bold, italic]} />}
+        </div>
         <div
           aria-live="polite"
           className="flex h-8 shrink-0 items-center justify-end border-t border-neutral-100 px-4 text-[13px] tabular-nums text-neutral-500"

@@ -96,3 +96,19 @@ math-field.mojiire-mathfield::part(virtual-keyboard-toggle) {
 input[type='number']::-webkit-inner-spin-button {
   opacity: 0.4;
 }
+
+/* 縦書き入力欄の自前カーソルの点滅（VerticalCaret） */
+@keyframes vertical-caret-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  50.01%,
+  100% {
+    opacity: 0;
+  }
+}
+.vertical-caret {
+  animation: vertical-caret-blink 1s step-end infinite;
+  animation-delay: 0.5s;
+}

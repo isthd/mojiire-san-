@@ -22,6 +22,12 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    id: 4,
+    date: '2026-10-27',
+    features: [],
+    fixes: ['iPad で縦書きの文字を入力するとき、カーソルが小さくなったり、文字から離れた所に表示されたりする不具合を直しました。'],
+  },
+  {
     id: 3,
     date: '2026-10-27',
     features: [
