@@ -13,7 +13,6 @@ import {
   ImagePlus,
   Minus,
   MoveUpRight,
-  NotebookPen,
   PaintBucket,
   Palette,
   Pen,
@@ -38,6 +37,7 @@ import { addTextAtCenter } from '../../canvas/textEditController';
 import { currentPageOf, selectedObjects, useEditor, type ToolType } from '../../store/editorStore';
 import { useSettings, type ToolSettings, type ToolSettingsKey } from '../../store/settingsStore';
 import { FONT_OPTIONS, isRuledText, type DashStyle, type EditorObject, type TextObject } from '../../types/model';
+import { LetterPaper } from '../icons/LetterPaper';
 import { COLOR_SWATCHES, cx, HIGHLIGHT_SWATCHES, IconButton, NoneSwatch } from '../ui/primitives';
 
 // ===== 小さな部品 =====
@@ -332,7 +332,7 @@ const TEXT_TABS: Tab[] = [
   { key: 'outline', label: '縁取り', icon: Baseline },
   { key: 'rotate', label: '回転', icon: RotateCw },
 ];
-const RULED_TEXT_TABS: Tab[] = [{ key: 'rule', label: '便箋の線', icon: NotebookPen }, ...TEXT_TABS];
+const RULED_TEXT_TABS: Tab[] = [{ key: 'rule', label: '便箋の線', icon: LetterPaper }, ...TEXT_TABS];
 const MATH_TABS: Tab[] = [
   { key: 'edit', label: '数式を編集', icon: Pencil },
   { key: 'color', label: '色', icon: Palette },
@@ -740,7 +740,7 @@ function RuledBar() {
   return (
     <div>
       <div className="flex h-12 items-center gap-2 border-b border-neutral-200 px-3">
-        <NotebookPen size={20} className="shrink-0 text-[#0a84ff]" aria-hidden />
+        <LetterPaper size={20} className="shrink-0 text-[#0a84ff]" aria-hidden />
         <span className="min-w-0 flex-1 text-[14px] font-medium">便箋の線に合わせて書く</span>
         <button
           type="button"
@@ -808,7 +808,7 @@ function IdleBar({ onAddImages }: { onAddImages: () => void }) {
           onClick={() => setTool('ruled')}
           className="tap flex h-12 flex-col items-center justify-center rounded-xl px-2.5 text-neutral-700 hover:bg-neutral-100"
         >
-          <NotebookPen size={22} aria-hidden />
+          <LetterPaper size={22} aria-hidden />
           <span className="text-[11px] font-medium">便箋</span>
         </button>
         <button
