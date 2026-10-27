@@ -79,3 +79,63 @@ describe('detectAnswerFields（表）', () => {
     expect(detectAnswerFields(img)).toEqual([]);
   });
 });
+
+describe('detectAnswerFields（写真）', () => {
+  /** 中心まわりに deg 度傾けた枠を描く */
+  function tiltedBox(img: GrayImage, x: number, y: number, w: number, h: number, deg: number, t = 2) {
+    const a = (deg * Math.PI) / 180;
+    const cx = img.width / 2;
+    const cy = img.height / 2;
+    const put = (px: number, py: number) => {
+      const dx = px - cx;
+      const dy = py - cy;
+      const rx = Math.round(dx * Math.cos(a) - dy * Math.sin(a) + cx);
+      const ry = Math.round(dx * Math.sin(a) + dy * Math.cos(a) + cy);
+      for (let k = 0; k < t; k++) for (let j = 0; j < t; j++) img.data[(ry + j) * img.width + rx + k] = 20;
+    };
+    for (let i = 0; i <= w; i++) put(x + i, y), put(x + i, y + h);
+    for (let i = 0; i <= h; i++) put(x, y + i), put(x + w, y + i);
+  }
+
+  it('傾いた写真でも枠を見つける', () => {
+    const img = blank(800, 600);
+    tiltedBox(img, 150, 150, 400, 80, 2.5);
+    tiltedBox(img, 150, 350, 400, 80, 2.5);
+    const fields = detectAnswerFields(img);
+    expect(fields).toHaveLength(2);
+    expect(fields.every((f) => f.kind === 'box' && Math.abs(f.width - 400) < 20)).toBe(true);
+  });
+
+  it('線が途切れていても枠を見つけ、途切れた辺を下線と間違えない', () => {
+    const img = blank(800, 600);
+    box(img, 200, 200, 300, 70);
+    // 数か所の途切れ
+    for (const x of [240, 300, 380, 450]) fill(img, x, 200, 4, 2, 250), fill(img, x, 268, 4, 2, 250);
+    fill(img, 200, 230, 2, 4, 250);
+    const fields = detectAnswerFields(img);
+    expect(fields).toHaveLength(1);
+    expect(fields[0].kind).toBe('box');
+  });
+
+  it('ざらつきのある写真でも空欄を記入済みと間違えない', () => {
+    const img = blank(800, 600);
+    let s = 7;
+    for (let i = 0; i < img.data.length; i++) {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      img.data[i] = 200 + ((s >>> 24) % 41) - 20;
+    }
+    box(img, 200, 200, 300, 70);
+    const fields = detectAnswerFields(img);
+    expect(fields).toHaveLength(1);
+    expect(fields[0].kind).toBe('box');
+  });
+
+  it('途切れた二重線の飾り罫は下線の欄にしない', () => {
+    const img = blank(800, 600);
+    for (let x = 50; x < 750; x += 120) {
+      fill(img, x, 100, 110, 2);
+      fill(img, x, 104, 110, 1);
+    }
+    expect(detectAnswerFields(img)).toEqual([]);
+  });
+});

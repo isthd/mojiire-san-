@@ -22,6 +22,14 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    id: 5,
+    date: '2026-10-27',
+    features: [],
+    fixes: [
+      '回答欄の自動認識の精度を上げました。傾いて撮った写真、線がかすれたり途切れたりしているプリント、ざらつきのある暗い写真でも、回答欄を見つけやすくなりました。',
+    ],
+  },
+  {
     id: 4,
     date: '2026-10-27',
     features: [],

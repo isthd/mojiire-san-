@@ -50,11 +50,32 @@ function rectSum(sum: Float64Array, w: number, x0: number, y0: number, x1: numbe
   return sum[y1 * W + x1] - sum[y0 * W + x1] - sum[y1 * W + x0] + sum[y0 * W + x0];
 }
 
-/** 周囲より暗い画素（インク）。写真の明るさむらに強い適応的二値化 */
+/** 写真のざらつきの大きさ（隣り合う画素の差の中央値から推定した標準偏差） */
+function noiseLevel(img: GrayImage): number {
+  const { width: w, height: h, data } = img;
+  const hist = new Uint32Array(256);
+  let n = 0;
+  const step = Math.max(1, Math.floor((w * h) / 200000));
+  for (let i = 0; i < w * h - 1; i += step) {
+    if ((i + 1) % w === 0) continue;
+    hist[Math.abs(data[i] - data[i + 1])]++;
+    n++;
+  }
+  let acc = 0;
+  for (let d = 0; d < 256; d++) {
+    acc += hist[d];
+    if (acc * 2 >= n) return d / 0.954; // |N(0,σ)-N(0,σ)| の中央値 ≒ 0.954σ
+  }
+  return 0;
+}
+
+/** 周囲より暗い画素（インク）。写真の明るさむらに強い適応的二値化。ざらつきの点は取り除く */
 function inkMask(img: GrayImage): Uint8Array {
   const { width: w, height: h, data } = img;
   const r = Math.max(7, Math.round(Math.max(w, h) / 80));
   const sum = integral(w, h, (i) => data[i]);
+  // ざらつきが大きい写真では、ノイズをインクと見なさないよう差のしきい値を上げる
+  const noise = Math.min(30, noiseLevel(img) * 2.5);
   const ink = new Uint8Array(w * h);
   for (let y = 0; y < h; y++) {
     const y0 = Math.max(0, y - r);
@@ -65,14 +86,96 @@ function inkMask(img: GrayImage): Uint8Array {
       const mean = rectSum(sum, w, x0, y0, x1, y1) / ((x1 - x0) * (y1 - y0));
       const g = data[y * w + x];
       // 塗りつぶし部分は周囲との差が出ないため、十分に暗ければインクとする
-      if (g < 90 || (g < 235 && g < mean - Math.max(14, mean * 0.12))) ink[y * w + x] = 1;
+      if (g < 90 || (g < 235 && g < mean - Math.max(14, mean * 0.12, noise))) ink[y * w + x] = 1;
     }
+  }
+  // 数画素だけの孤立した点（ざらつき・ごみ）を消す
+  for (const c of components(ink, w, h, 1)) {
+    if (c.area > 3) continue;
+    for (let y = c.y0; y <= c.y1; y++) for (let x = c.x0; x <= c.x1; x++) ink[y * w + x] = 0;
   }
   return ink;
 }
 
-/** 一定以上の長さで続くインクの並び（途切れは gap 画素まで許容）を線として取り出す */
-function runMask(ink: Uint8Array, w: number, h: number, horizontal: boolean, minLen: number, gap: number): Uint8Array {
+/** 写真の傾き（度）。インクを各角度で横方向に投影し、行や罫線が最もくっきり揃う角度を選ぶ */
+function estimateSkew(ink: Uint8Array, w: number, h: number): number {
+  let count = 0;
+  for (let i = 0; i < ink.length; i++) count += ink[i];
+  if (count < 50) return 0;
+  const step = Math.max(1, Math.floor(count / 150000));
+  const xs = new Float32Array(Math.ceil(count / step));
+  const ys = new Float32Array(xs.length);
+  let n = 0;
+  for (let i = 0, k = 0; i < ink.length; i++) {
+    if (!ink[i] || k++ % step) continue;
+    xs[n] = (i % w) - w / 2;
+    ys[n] = Math.floor(i / w) - h / 2;
+    n++;
+  }
+  const size = Math.ceil(Math.hypot(w, h)) + 2;
+  const hist = new Float64Array(size);
+  const off = size / 2;
+  const score = (deg: number) => {
+    const t = (deg * Math.PI) / 180;
+    const c = Math.cos(t);
+    const s = Math.sin(t);
+    hist.fill(0);
+    for (let i = 0; i < n; i++) hist[Math.floor(ys[i] * c - xs[i] * s + off)]++;
+    let v = 0;
+    for (let i = 0; i < size; i++) v += hist[i] * hist[i];
+    return v;
+  };
+  let best = 0;
+  let bestScore = score(0);
+  const search = (from: number, to: number, by: number) => {
+    for (let a = from; a <= to + 1e-9; a += by) {
+      const v = score(a);
+      if (v > bestScore) (bestScore = v), (best = a);
+    }
+  };
+  search(-6, 6, 0.3);
+  const center = best;
+  search(center - 0.3, center + 0.3, 0.05);
+  return best;
+}
+
+/** 画像を deg 度回して傾きを打ち消す（大きさはそのまま）。はみ出た部分は端の画素を伸ばす */
+function rotate(img: GrayImage, deg: number): GrayImage {
+  const { width: w, height: h, data } = img;
+  const t = (deg * Math.PI) / 180;
+  const c = Math.cos(t);
+  const s = Math.sin(t);
+  const out = new Uint8Array(w * h);
+  for (let v = 0; v < h; v++) {
+    const dv = v - h / 2;
+    for (let u = 0; u < w; u++) {
+      const du = u - w / 2;
+      const x = Math.min(w - 1.001, Math.max(0, du * c - dv * s + w / 2));
+      const y = Math.min(h - 1.001, Math.max(0, du * s + dv * c + h / 2));
+      const x0 = Math.floor(x);
+      const y0 = Math.floor(y);
+      const fx = x - x0;
+      const fy = y - y0;
+      const i = y0 * w + x0;
+      const a = data[i] * (1 - fx) + data[i + 1] * fx;
+      const b = data[i + w] * (1 - fx) + data[i + w + 1] * fx;
+      out[v * w + u] = Math.round(a * (1 - fy) + b * fy);
+    }
+  }
+  return { width: w, height: h, data: out };
+}
+
+/** 一定以上の長さで続くインクの並び（途切れは gap 画素まで許容）を線として取り出す。
+ *  線の両端は extend 画素だけ延ばし、角のすき間を閉じる */
+function runMask(
+  ink: Uint8Array,
+  w: number,
+  h: number,
+  horizontal: boolean,
+  minLen: number,
+  gap: number,
+  extend = 0,
+): Uint8Array {
   const out = new Uint8Array(w * h);
   const lines = horizontal ? h : w;
   const len = horizontal ? w : h;
@@ -81,7 +184,10 @@ function runMask(ink: Uint8Array, w: number, h: number, horizontal: boolean, min
     let start = -1;
     let last = -1;
     const flush = () => {
-      if (start >= 0 && last - start + 1 >= minLen) for (let i = start; i <= last; i++) out[at(l, i)] = 1;
+      if (start < 0 || last - start + 1 < minLen) return;
+      const a = Math.max(0, start - extend);
+      const b = Math.min(len - 1, last + extend);
+      for (let i = a; i <= b; i++) out[at(l, i)] = 1;
     };
     for (let i = 0; i < len; i++) {
       if (!ink[at(l, i)]) continue;
@@ -162,16 +268,36 @@ function overlaps(a: AnswerField, b: { x: number; y: number; width: number; heig
 
 export function detectAnswerFields(img: GrayImage): AnswerField[] {
   const { width: w, height: h } = img;
-  const long = Math.max(w, h);
   if (w < 16 || h < 16) return [];
   const ink = inkMask(img);
+  // 傾いた写真は、まっすぐに直してから探し、見つかった欄を元の向きの座標に戻す
+  const skew = estimateSkew(ink, w, h);
+  if (Math.abs(skew) < 0.2) return detectUpright(img, ink);
+  const upright = rotate(img, skew);
+  const t = (skew * Math.PI) / 180;
+  const c = Math.cos(t);
+  const s = Math.sin(t);
+  return detectUpright(upright, inkMask(upright)).map((f) => {
+    const du = f.x + f.width / 2 - w / 2;
+    const dv = f.y + f.height / 2 - h / 2;
+    const cx = du * c - dv * s + w / 2;
+    const cy = du * s + dv * c + h / 2;
+    return { ...f, x: cx - f.width / 2, y: cy - f.height / 2 };
+  });
+}
+
+function detectUpright(img: GrayImage, ink: Uint8Array): AnswerField[] {
+  const { width: w, height: h } = img;
+  const long = Math.max(w, h);
   const inkSum = integral(w, h, (i) => ink[i]);
   const inkIn = (x0: number, y0: number, x1: number, y1: number) => rectSum(inkSum, w, x0, y0, x1, y1);
 
   const minH = Math.max(15, Math.round(long * 0.02));
   const minV = Math.max(10, Math.round(long * 0.012));
-  const hMask = runMask(ink, w, h, true, minH, 2);
-  const vMask = runMask(ink, w, h, false, minV, 2);
+  // かすれ・途切れた線もつなげる
+  const gap = Math.max(2, Math.round(long * 0.004));
+  const hMask = runMask(ink, w, h, true, minH, gap, gap);
+  const vMask = runMask(ink, w, h, false, minV, gap, gap);
   const lines = new Uint8Array(w * h);
   for (let i = 0; i < lines.length; i++) lines[i] = hMask[i] | vMask[i];
   const walls = dilate(lines, w, h);
@@ -230,28 +356,44 @@ export function detectAnswerFields(img: GrayImage): AnswerField[] {
   // ===== 下線だけの欄 =====
   const maxThick = Math.max(4, Math.round(long * 0.006));
   const minLen = Math.max(minH * 1.5, long * 0.04);
-  for (const c of components(hMask, w, h, 1)) {
+  const hSum = integral(w, h, (i) => hMask[i]);
+  const vSum = integral(w, h, (i) => vMask[i]);
+  // 同じ高さで途切れた線のかけらを1本にまとめる
+  const segs = components(hMask, w, h, 1)
+    .filter((c) => c.y1 - c.y0 + 1 <= maxThick)
+    .sort((a, b) => a.x0 - b.x0);
+  const merged: Component[] = [];
+  for (const c of segs) {
+    const prev = merged.find(
+      (p) => c.x0 - p.x1 <= gap * 3 && Math.abs((c.y0 + c.y1) / 2 - (p.y0 + p.y1) / 2) <= maxThick / 2,
+    );
+    if (prev && Math.max(prev.y1, c.y1) - Math.min(prev.y0, c.y0) + 1 <= maxThick) {
+      prev.x1 = Math.max(prev.x1, c.x1);
+      prev.y0 = Math.min(prev.y0, c.y0);
+      prev.y1 = Math.max(prev.y1, c.y1);
+    } else merged.push({ ...c });
+  }
+  for (const c of merged) {
     const lw = c.x1 - c.x0 + 1;
-    const lh = c.y1 - c.y0 + 1;
-    if (lh > maxThick || lw < minLen || lw > w * 0.7) continue;
-    // 両端に縦線がある（＝枠の一部）なら対象外
-    const vAt = (x: number) => {
-      for (let y = Math.max(0, c.y0 - minV); y <= Math.min(h - 1, c.y1 + minV); y++) {
-        for (let dx = -3; dx <= 3; dx++) {
-          const xx = x + dx;
-          if (xx >= 0 && xx < w && vMask[y * w + xx]) return true;
-        }
-      }
-      return false;
-    };
-    if (vAt(c.x0) || vAt(c.x1)) continue;
+    if (lw < minLen || lw > w * 0.7) continue;
+    // 両端に縦線がある（＝枠の一部）なら対象外。
+    // 線の端は延ばしてあるので、元の端の内側だけを見る（隣の文字の縦画を拾わないように）
+    const vAt = (xa: number, xb: number) =>
+      rectSum(vSum, w, Math.max(0, xa), Math.max(0, c.y0 - minV), Math.min(w, xb), Math.min(h, c.y1 + minV + 1)) >= minV;
+    if (vAt(c.x0, c.x0 + gap * 2 + 3) || vAt(c.x1 - gap * 2 - 2, c.x1 + 1)) continue;
+    // すぐ上か下に平行な線がある（二重線の飾り罫・枠の辺）なら対象外
+    const near = Math.round(maxThick * 1.2);
+    const parallel = (y0: number, y1: number) =>
+      y1 > y0 && rectSum(hSum, w, c.x0, Math.max(0, y0), c.x1 + 1, Math.min(h, y1)) > lw * 0.5;
+    if (parallel(c.y0 - near, c.y0 - 1) || parallel(c.y1 + 2, c.y1 + 1 + near)) continue;
     const ah = Math.round(Math.min(Math.max(lw * 0.3, long * 0.018), long * 0.035));
     const y0 = c.y0 - ah;
     if (y0 < 0) continue;
     const pad = Math.max(2, Math.round(ah * 0.1));
     const area = lw * (ah - pad);
     if (inkIn(c.x0, y0, c.x1 + 1, c.y0 - pad) > area * 0.006) continue; // 線の上に文字がある（傍線など）
-    const f: AnswerField = { x: c.x0, y: y0, width: lw, height: ah, kind: 'underline', vertical: false };
+    // 延ばした分を除いた、元の線の長さ
+    const f: AnswerField = { x: c.x0 + gap, y: y0, width: lw - gap * 2, height: ah, kind: 'underline', vertical: false };
     if (fields.some((b) => overlaps(f, b, 2))) continue;
     fields.push(f);
   }
