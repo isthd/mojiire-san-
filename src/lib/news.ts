@@ -22,6 +22,14 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    id: 6,
+    date: '2026-10-28',
+    features: [],
+    fixes: [
+      '回答欄の自動認識で、〔　〕や（　）のようなかっこの回答欄も見つけられるようにしました。縦書きのかっこにも対応しています。',
+    ],
+  },
+  {
     id: 5,
     date: '2026-10-27',
     features: [],

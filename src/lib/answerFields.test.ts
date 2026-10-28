@@ -139,3 +139,69 @@ describe('detectAnswerFields（写真）', () => {
     expect(detectAnswerFields(img)).toEqual([]);
   });
 });
+
+describe('detectAnswerFields（かっこ）', () => {
+  /** 丸かっこ。open なら「（」、そうでなければ「）」。縦書き用（vertical）は「︵」「︶」 */
+  function paren(img: GrayImage, x: number, y: number, len: number, open: boolean, vertical = false, t = 3) {
+    const bulge = Math.round(len * 0.22);
+    for (let i = 0; i <= len; i++) {
+      const u = (i / len) * 2 - 1; // -1〜1
+      const d = Math.round(bulge * (1 - u * u)); // 中央ほど張り出す
+      const off = open ? bulge - d : d;
+      if (vertical) fill(img, x + i, y + off, 1, t);
+      else fill(img, x + off, y + i, t, 1);
+    }
+  }
+
+  /** 亀甲かっこ「〔」「〕」 */
+  function shell(img: GrayImage, x: number, y: number, len: number, open: boolean, t = 3) {
+    const hook = Math.round(len * 0.2);
+    const sx = open ? x : x + hook - t;
+    fill(img, sx, y + hook, t, len - hook * 2);
+    for (let i = 0; i < hook; i++) {
+      const hx = open ? x + hook - i - 1 : x + i;
+      fill(img, hx, y + i, t, 1);
+      fill(img, hx, y + len - i - 1, t, 1);
+    }
+  }
+
+  it('空いた（　）と〔　〕を回答欄として検出する', () => {
+    const img = blank(800, 600);
+    paren(img, 100, 100, 40, true);
+    paren(img, 300, 100, 40, false);
+    shell(img, 100, 300, 40, true);
+    shell(img, 400, 300, 40, false);
+    const fields = detectAnswerFields(img);
+    expect(fields).toHaveLength(2);
+    expect(fields.every((f) => f.kind === 'bracket' && !f.vertical)).toBe(true);
+    const [a, b] = fields;
+    expect(a.x).toBeGreaterThan(105);
+    expect(a.x + a.width).toBeLessThanOrEqual(301);
+    expect(Math.abs(a.y - 100)).toBeLessThanOrEqual(3);
+    expect(b.x).toBeGreaterThan(105);
+    expect(b.x + b.width).toBeLessThanOrEqual(401);
+  });
+
+  it('文字の入ったかっこや (1) のような番号のかっこは除外する', () => {
+    const img = blank(800, 600);
+    paren(img, 100, 100, 40, true);
+    paren(img, 300, 100, 40, false);
+    fill(img, 150, 108, 100, 24); // 中に文字
+    paren(img, 100, 300, 40, true);
+    paren(img, 130, 300, 40, false); // 間がせまい番号
+    fill(img, 120, 310, 4, 20);
+    expect(detectAnswerFields(img)).toEqual([]);
+  });
+
+  it('縦書きの︵　︶を縦向きの回答欄として検出する', () => {
+    const img = blank(600, 800);
+    paren(img, 200, 100, 40, true, true);
+    paren(img, 200, 350, 40, false, true);
+    const fields = detectAnswerFields(img);
+    expect(fields).toHaveLength(1);
+    expect(fields[0].kind).toBe('bracket');
+    expect(fields[0].vertical).toBe(true);
+    expect(fields[0].y).toBeGreaterThan(105);
+    expect(fields[0].y + fields[0].height).toBeLessThanOrEqual(351);
+  });
+});

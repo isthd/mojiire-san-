@@ -1,6 +1,7 @@
 // 画像から回答欄（罫線で囲まれた空欄・下線の空欄）を検出する純粋関数。
 // 手順：適応的二値化 → 長い水平・垂直線だけを取り出す → 線で囲まれた領域のうち、中が空白の長方形を回答欄とする。
 // 下線だけの欄（＿＿＿）は、上側が空白の単独の水平線として検出する。
+// かっこの欄（〔　〕・（　））は、向かい合うかっこの組で中が空白のものを検出する（縦書きの ︹　︺・︵　︶ も）。
 
 export interface GrayImage {
   width: number;
@@ -15,7 +16,7 @@ export interface AnswerField {
   y: number;
   width: number;
   height: number;
-  kind: 'box' | 'underline';
+  kind: 'box' | 'underline' | 'bracket';
   /** 縦長の欄（縦書き向き） */
   vertical: boolean;
 }
@@ -229,8 +230,16 @@ interface Component {
   border: boolean;
 }
 
-/** value が一致する画素の連結成分（4近傍）。成分ごとに外接矩形・面積を返す */
-function components(mask: Uint8Array, w: number, h: number, value: 0 | 1): Component[] {
+/** value が一致する画素の連結成分（4近傍。eight なら斜めもつなぐ）。成分ごとに外接矩形・面積を返す。
+ *  labels を渡すと、各画素に成分の番号＋1 を書き込む */
+function components(
+  mask: Uint8Array,
+  w: number,
+  h: number,
+  value: 0 | 1,
+  eight = false,
+  labels?: Int32Array,
+): Component[] {
   const seen = new Uint8Array(w * h);
   const stack = new Int32Array(w * h);
   const out: Component[] = [];
@@ -239,12 +248,14 @@ function components(mask: Uint8Array, w: number, h: number, value: 0 | 1): Compo
     let top = 0;
     stack[top++] = s;
     seen[s] = 1;
+    const id = out.length + 1;
     const c: Component = { x0: w, y0: h, x1: -1, y1: -1, area: 0, border: false };
     while (top) {
       const i = stack[--top];
       const x = i % w;
       const y = (i - x) / w;
       c.area++;
+      if (labels) labels[i] = id;
       if (x < c.x0) c.x0 = x;
       if (x > c.x1) c.x1 = x;
       if (y < c.y0) c.y0 = y;
@@ -254,6 +265,13 @@ function components(mask: Uint8Array, w: number, h: number, value: 0 | 1): Compo
       if (x < w - 1 && !seen[i + 1] && mask[i + 1] === value) (seen[i + 1] = 1), (stack[top++] = i + 1);
       if (y > 0 && !seen[i - w] && mask[i - w] === value) (seen[i - w] = 1), (stack[top++] = i - w);
       if (y < h - 1 && !seen[i + w] && mask[i + w] === value) (seen[i + w] = 1), (stack[top++] = i + w);
+      if (eight) {
+        for (const d of [-w - 1, -w + 1, w - 1, w + 1]) {
+          const j = i + d;
+          if (j < 0 || j >= mask.length || Math.abs((j % w) - x) !== 1) continue;
+          if (!seen[j] && mask[j] === value) (seen[j] = 1), (stack[top++] = j);
+        }
+      }
     }
     out.push(c);
   }
@@ -398,7 +416,135 @@ function detectUpright(img: GrayImage, ink: Uint8Array): AnswerField[] {
     fields.push(f);
   }
 
+  // ===== かっこの欄 =====
+  for (const f of detectBrackets(ink, w, h, inkIn)) {
+    if (fields.some((b) => overlaps(f, b, 2))) continue;
+    fields.push(f);
+  }
+
   // 上から下、左から右の順
   const rowTol = long * 0.01;
   return fields.sort((a, b) => (Math.abs(a.y - b.y) > rowTol ? a.y - b.y : a.x - b.x));
+}
+
+type Side = 'open' | 'close';
+
+/** かっこの形か。横書き（along='y'）では縦長の成分を見て「（」なら open、「）」なら close。
+ *  縦書き（along='x'）では横長の成分を見て「︵」なら open、「︶」なら close。
+ *  開きかっこは、両端（上下の端）が中央よりも開く側へ張り出し、中央が反対側の際にある */
+function bracketSide(c: Component, labels: Int32Array, id: number, w: number, along: 'x' | 'y'): Side | null {
+  const n = along === 'y' ? c.y1 - c.y0 + 1 : c.x1 - c.x0 + 1; // 長さ方向
+  const span = along === 'y' ? c.x1 - c.x0 + 1 : c.y1 - c.y0 + 1; // 太さ方向
+  const lo = new Float64Array(n).fill(Infinity);
+  const hi = new Float64Array(n).fill(-Infinity);
+  for (let y = c.y0; y <= c.y1; y++) {
+    for (let x = c.x0; x <= c.x1; x++) {
+      if (labels[y * w + x] !== id) continue;
+      const k = along === 'y' ? y - c.y0 : x - c.x0;
+      const v = along === 'y' ? x - c.x0 : y - c.y0;
+      if (v < lo[k]) lo[k] = v;
+      if (v > hi[k]) hi[k] = v;
+    }
+  }
+  let filled = 0;
+  for (let k = 0; k < n; k++) if (hi[k] >= 0) filled++;
+  if (filled < n * 0.85) return null; // 途中で切れている（かっこは1本につながった線）
+  const avg = (arr: Float64Array, a: number, b: number) => {
+    let s = 0;
+    let m = 0;
+    for (let k = Math.max(0, a); k < Math.min(n, b); k++) if (hi[k] >= 0) (s += arr[k]), m++;
+    return m ? s / m : NaN;
+  };
+  // 端の張り出しは最も外側の値で見る（〔 の角のように短いかぎでも拾う）
+  const most = (arr: Float64Array, a: number, b: number, sign: 1 | -1) => {
+    let v = -Infinity;
+    for (let k = Math.max(0, a); k < Math.min(n, b); k++) if (hi[k] >= 0) v = Math.max(v, arr[k] * sign);
+    return v * sign;
+  };
+  const e = Math.max(1, Math.round(n * 0.15));
+  const m0 = Math.round(n * 0.35);
+  const m1 = Math.round(n * 0.65);
+  const need = Math.max(2, span * 0.4);
+  // 開きかっこ：端の外側の縁が中央より大きく張り出し、中央は内側の縁が 0 の近く
+  const openTop = most(hi, 0, e, 1) - avg(hi, m0, m1);
+  const openBot = most(hi, n - e, n, 1) - avg(hi, m0, m1);
+  if (openTop >= need && openBot >= need && avg(lo, m0, m1) <= span * 0.35) return 'open';
+  const closeTop = avg(lo, m0, m1) - most(lo, 0, e, -1);
+  const closeBot = avg(lo, m0, m1) - most(lo, n - e, n, -1);
+  if (closeTop >= need && closeBot >= need && span - 1 - avg(hi, m0, m1) <= span * 0.35) return 'close';
+  return null;
+}
+
+/** 向かい合うかっこの組で、間が空白のものを回答欄とする */
+function detectBrackets(
+  ink: Uint8Array,
+  w: number,
+  h: number,
+  inkIn: (x0: number, y0: number, x1: number, y1: number) => number,
+): AnswerField[] {
+  const long = Math.max(w, h);
+  const labels = new Int32Array(w * h);
+  const comps = components(ink, w, h, 1, true, labels);
+  const minLen = Math.max(10, Math.round(long * 0.01));
+  const maxLen = long * 0.3;
+  const out: AnswerField[] = [];
+  for (const along of ['y', 'x'] as const) {
+    // along='y'：横書き（左右のかっこ）、along='x'：縦書き（上下のかっこ）
+    const len = (c: Component) => (along === 'y' ? c.y1 - c.y0 + 1 : c.x1 - c.x0 + 1);
+    const thick = (c: Component) => (along === 'y' ? c.x1 - c.x0 + 1 : c.y1 - c.y0 + 1);
+    const a0 = (c: Component) => (along === 'y' ? c.y0 : c.x0); // 長さ方向の始まり
+    const a1 = (c: Component) => (along === 'y' ? c.y1 : c.x1);
+    const b0 = (c: Component) => (along === 'y' ? c.x0 : c.y0); // 並ぶ方向の始まり
+    const b1 = (c: Component) => (along === 'y' ? c.x1 : c.y1);
+    const opens: Component[] = [];
+    const closes: Component[] = [];
+    comps.forEach((c, i) => {
+      const l = len(c);
+      const t = thick(c);
+      if (l < minLen || l > maxLen || t < 2 || l < t * 1.8) return;
+      const side = bracketSide(c, labels, i + 1, w, along);
+      if (side === 'open') opens.push(c);
+      else if (side === 'close') closes.push(c);
+    });
+    closes.sort((p, q) => b0(p) - b0(q));
+    for (const o of opens) {
+      const lo = len(o);
+      // 同じ行（列）で、右（下）にあるいちばん近い閉じかっこ
+      const cl = closes.find((c) => {
+        if (b0(c) <= b1(o)) return false;
+        const lc = len(c);
+        if (lc < lo * 0.6 || lc > lo * 1.6) return false;
+        const ov = Math.min(a1(o), a1(c)) - Math.max(a0(o), a0(c)) + 1;
+        return ov >= Math.max(lo, lc) * 0.6;
+      });
+      if (!cl) continue;
+      const size = (lo + len(cl)) / 2;
+      const gap = b0(cl) - b1(o) - 1;
+      // 「(1)」のような番号のかっこは除く
+      if (gap < size * 1.2) continue;
+      // 間にほかのかっこがある（入れ子・別の組）なら対象外
+      if (opens.some((p) => p !== o && b0(p) > b1(o) && b1(p) < b0(cl) && overlapAlong(p, o))) continue;
+      const s0 = Math.min(a0(o), a0(cl));
+      const s1 = Math.max(a1(o), a1(cl)) + 1;
+      const pad = Math.max(2, Math.round(size * 0.12));
+      const i0 = b1(o) + 1 + pad;
+      const i1 = b0(cl) - pad;
+      const j0 = s0 + pad;
+      const j1 = s1 - pad;
+      if (i1 - i0 < 3 || j1 - j0 < 3) continue;
+      const total = along === 'y' ? inkIn(i0, j0, i1, j1) : inkIn(j0, i0, j1, i1);
+      if (total > (i1 - i0) * (j1 - j0) * 0.008) continue; // 文字が書かれている
+      const g0 = b1(o) + 1;
+      out.push(
+        along === 'y'
+          ? { x: g0, y: s0, width: gap, height: s1 - s0, kind: 'bracket', vertical: false }
+          : { x: s0, y: g0, width: s1 - s0, height: gap, kind: 'bracket', vertical: true },
+      );
+    }
+
+    function overlapAlong(p: Component, q: Component): boolean {
+      return Math.min(a1(p), a1(q)) - Math.max(a0(p), a0(q)) + 1 >= Math.min(len(p), len(q)) * 0.6;
+    }
+  }
+  return out;
 }
