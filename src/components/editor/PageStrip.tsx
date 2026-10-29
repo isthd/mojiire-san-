@@ -37,7 +37,7 @@ export function PageStrip({ onAddImages }: { onAddImages: () => void }) {
   const idx = pages.findIndex((p) => p.id === currentId);
 
   return (
-    <div className="z-10 border-t border-neutral-200 bg-white/95 backdrop-blur">
+    <div className="z-10 select-none border-t border-neutral-200 bg-white/95 backdrop-blur [-webkit-touch-callout:none]">
       <div className="flex h-10 items-center gap-1 px-2">
         <IconButton label={open ? 'ページ一覧を閉じる' : 'ページ一覧を開く'} onClick={() => setOpen(!open)} className="h-9 w-9">
           {open ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
