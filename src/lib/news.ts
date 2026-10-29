@@ -22,6 +22,12 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    id: 7,
+    date: '2026-10-29',
+    features: [],
+    fixes: ['画面下の「ページ 1 / 3」のような表示を長押ししたとき、文字が選択されて青くなってしまう不具合を直しました。'],
+  },
+  {
     id: 6,
     date: '2026-10-28',
     features: [],
