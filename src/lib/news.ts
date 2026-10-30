@@ -22,6 +22,17 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    id: 8,
+    date: '2026-10-30',
+    features: [
+      {
+        title: 'フォントが5種類増えました',
+        how: ['「ペン字」「丸文字」「極太ゴシック」「ドット」「デコ明朝」が選べるようになりました。'],
+        open: ['文字を選んで、画面下の「フォント」からフォント名をタップします。'],
+      },
+    ],
+  },
+  {
     id: 7,
     date: '2026-10-29',
     features: [],

@@ -24,7 +24,12 @@ export type FontKey =
   | 'tegaki'
   | 'marker'
   | 'pop'
-  | 'fude';
+  | 'fude'
+  | 'penji'
+  | 'marumoji'
+  | 'gokubuto'
+  | 'dot'
+  | 'deco';
 
 interface BaseObject {
   id: string;
@@ -207,6 +212,11 @@ export const FONT_OPTIONS: { key: FontKey; label: string; css: string }[] = [
   { key: 'marker', label: 'マーカー風', css: '"Yusei Magic",sans-serif' },
   { key: 'pop', label: 'ポップ', css: '"Mochiy Pop One",sans-serif' },
   { key: 'fude', label: '筆文字', css: '"Yuji Syuku",serif' },
+  { key: 'penji', label: 'ペン字', css: '"Zen Kurenaido",sans-serif' },
+  { key: 'marumoji', label: '丸文字', css: '"Hachi Maru Pop",sans-serif' },
+  { key: 'gokubuto', label: '極太ゴシック', css: '"Dela Gothic One",sans-serif' },
+  { key: 'dot', label: 'ドット', css: '"DotGothic16",sans-serif' },
+  { key: 'deco', label: 'デコ明朝', css: '"Kaisei Decol",serif' },
 ];
 
 export function fontCss(key: FontKey): string {
