@@ -7,7 +7,7 @@ import { usePageImage } from '../hooks/usePageImage';
 import { rectFromPoints, screenToImage, simplifyPoints, snapAngle, zoomAt, type Point, type View } from '../lib/geometry';
 import { currentPageOf, useEditor, type ToolType } from '../store/editorStore';
 import { useSettings } from '../store/settingsStore';
-import { ERASABLE_TYPES, isRuledText, type EditorObject, type LineObject, type StrokeObject } from '../types/model';
+import { ERASABLE_TYPES, isEmptyText, isRuledText, type EditorObject, type LineObject, type StrokeObject } from '../types/model';
 import { buildNode, describeObject } from './describe';
 import { createLine, createShape, createStroke, createText, settingsFromObject, settingsKeyFor } from './objectFactory';
 import { ObjectNode } from './ObjectNode';
@@ -529,7 +529,9 @@ export function EditorCanvas() {
           } else if (hitObj?.type === 'math') {
             st.openMathEditor({ targetId: hitObj.id, at: null, initialLatex: hitObj.latex });
           } else {
-            st.openMathEditor({ targetId: null, at: img, initialLatex: '' });
+            // 未入力のテキスト枠をタップした場合は、数式の確定時にその枠を取り除く
+            const replaceId = hitObj && isEmptyText(hitObj) ? hitObj.id : null;
+            st.openMathEditor({ targetId: null, at: img, initialLatex: '', replaceId });
           }
           break;
         }

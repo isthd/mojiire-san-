@@ -92,6 +92,7 @@ export function TextInputModal() {
     const o = { ...cur.obj, text: ref.current?.value ?? cur.obj.text };
     const fs = o.fontSize;
     let at: { x: number; y: number };
+    let replaceId: string | null = null;
     if (o.text.trim()) {
       const m = measureText(o);
       st.updateTextDraft({ text: o.text });
@@ -101,9 +102,11 @@ export function TextInputModal() {
     } else {
       st.cancelTextEdit();
       at = { x: o.x, y: o.y + fs * 0.75 };
+      // 既存の枠（回答欄の未入力の枠など）から文字を入れずに数式を入れた場合は、数式の確定時に枠を取り除く
+      if (!cur.isNew) replaceId = o.id;
     }
     ref.current?.blur();
-    st.openMathEditor({ targetId: null, at, initialLatex: '' });
+    st.openMathEditor({ targetId: null, at, initialLatex: '', replaceId });
   };
 
   const keepFocus = (e: React.PointerEvent) => e.preventDefault();

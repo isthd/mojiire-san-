@@ -34,6 +34,8 @@ export interface MathEditState {
   /** 新規配置位置（画像座標）。null なら表示中央 */
   at: Point | null;
   initialLatex: string;
+  /** 数式を挿入したときに取り除くテキスト枠（文字を入れずに枠から数式を入れた場合） */
+  replaceId?: string | null;
 }
 
 export type ModalType = 'export' | 'settings' | 'crop' | null;
@@ -78,7 +80,8 @@ interface EditorState {
   replacePage: (page: Page) => void;
 
   // オブジェクト
-  addObject: (obj: EditorObject, opts?: { select?: boolean }) => void;
+  /** replaceId を指定すると、そのテキスト枠と入れ替える（元に戻すは1回分） */
+  addObject: (obj: EditorObject, opts?: { select?: boolean; replaceId?: string | null }) => void;
   /** まとめて追加（元に戻すは1回分） */
   addObjects: (objs: EditorObject[]) => void;
   updateObjects: (patches: Record<string, Partial<EditorObject>>, key?: string) => void;
@@ -253,7 +256,15 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
 
     addObject: (obj, opts) =>
-      commitObjects((objs) => [...objs, obj], undefined, opts?.select ? { selectedIds: [obj.id] } : undefined),
+      commitObjects(
+        (objs) => {
+          const rid = opts?.replaceId;
+          const rest = rid ? objs.filter((o) => !(o.id === rid && o.type === 'text')) : objs;
+          return [...rest, obj];
+        },
+        undefined,
+        opts?.select ? { selectedIds: [obj.id] } : undefined,
+      ),
     addObjects: (added) => {
       if (added.length) commitObjects((objs) => [...objs, ...added]);
     },

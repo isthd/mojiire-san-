@@ -22,6 +22,12 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    id: 9,
+    date: '2026-11-02',
+    features: [],
+    fixes: ['回答欄の枠から「数式を入力」で数式を入れたとき、もとの「ダブルタップで入力」の枠が残ってしまう不具合を直しました。'],
+  },
+  {
     id: 8,
     date: '2026-10-30',
     features: [

@@ -149,7 +149,10 @@ function MathEditor({ state }: { state: MathEditState }) {
       } else {
         const s = useSettings.getState().tools.math;
         const r = await renderMathSvg(latex, s.fontSize * page.unit, s.color);
-        st.addObject(createMath(state.at ?? viewCenterInImage(), latex, r, s, page.unit), { select: true });
+        st.addObject(createMath(state.at ?? viewCenterInImage(), latex, r, s, page.unit), {
+          select: true,
+          replaceId: state.replaceId,
+        });
       }
       close();
     } catch (e) {
