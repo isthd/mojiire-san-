@@ -89,7 +89,15 @@ function today(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function Thumbnail({ blob }: { blob: Blob | null }) {
+/** 一覧用の短い日時（今年なら年を省く） */
+function shortDate(t: number): string {
+  const d = new Date(t);
+  const hm = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const md = `${d.getMonth() + 1}/${d.getDate()}`;
+  return d.getFullYear() === new Date().getFullYear() ? `${md} ${hm}` : `${d.getFullYear()}/${md}`;
+}
+
+function Thumbnail({ blob, small }: { blob: Blob | null; small?: boolean }) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!blob) return;
@@ -100,7 +108,7 @@ function Thumbnail({ blob }: { blob: Blob | null }) {
   if (!blob || !url) {
     return (
       <div className="flex h-full w-full items-center justify-center text-neutral-300">
-        <ImagePlus size={36} />
+        <ImagePlus size={small ? 18 : 30} strokeWidth={1.5} />
       </div>
     );
   }
@@ -149,15 +157,17 @@ function FolderChip({
         onDropProject(id);
       }}
       className={cx(
-        'tap flex h-10 max-w-[220px] shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[14px] font-medium ring-1 transition',
-        active ? 'bg-[#0a84ff] text-white ring-[#0a84ff]' : 'bg-white text-neutral-800 ring-neutral-200 hover:ring-[#0a84ff]',
+        'tap flex h-10 max-w-[220px] shrink-0 items-center gap-1.5 rounded-lg px-3 text-[14px] transition',
+        active
+          ? 'bg-white font-semibold text-neutral-900 shadow-[0_1px_2px_rgb(0_0_0/0.08)] ring-1 ring-black/[0.07]'
+          : 'text-neutral-600 hover:bg-black/[0.05]',
         dropTarget && onDropProject && !active && 'ring-2 ring-[#0a84ff]/40',
-        over && 'scale-105 ring-[3px] ring-[#0a84ff]',
+        over && 'bg-[#0a84ff]/10 ring-2 ring-[#0a84ff]',
       )}
     >
-      <Icon size={17} className={cx('shrink-0', !active && 'text-[#0a84ff]')} />
+      <Icon size={16} className={cx('shrink-0', active ? 'text-[#0a84ff]' : 'text-neutral-400')} />
       <span className="truncate">{label}</span>
-      <span className={cx('shrink-0 text-[12px] tabular-nums', active ? 'text-white/80' : 'text-neutral-400')}>{count}</span>
+      <span className="shrink-0 text-[12px] text-neutral-400 tabular-nums">{count}</span>
     </button>
   );
 }
@@ -513,14 +523,12 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
           <button
             type="button"
             onClick={() => imageInput.current?.click()}
-            className="flex items-center gap-4 rounded-2xl bg-[#0a84ff] p-5 text-left text-white shadow-sm transition hover:bg-[#0077ed] active:scale-[0.99]"
+            className="tap flex min-h-[76px] items-center gap-3.5 rounded-xl bg-[#0a84ff] px-5 py-3.5 text-left text-white transition-colors hover:bg-[#0077ed] active:bg-[#006adf]"
           >
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/20">
-              <ImagePlus size={26} />
-            </span>
+            <ImagePlus size={24} className="shrink-0" />
             <span className="min-w-0">
-              <span className="block text-[17px] font-semibold">画像から新規作成</span>
-              <span className="block truncate text-[13px] opacity-85">
+              <span className="block text-[16px] font-semibold">画像から新規作成</span>
+              <span className="block truncate text-[12.5px] text-white/80">
                 {currentFolder ? `「${currentFolder.name}」に作成（複数可）` : 'プリントや問題集の写真・PDFを選ぶ（複数可）'}
               </span>
             </span>
@@ -529,31 +537,30 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
             <button
               type="button"
               onClick={() => onOpen(latest.id)}
-              className="flex items-center gap-4 rounded-2xl bg-white p-5 text-left shadow-sm ring-1 ring-neutral-200 transition hover:ring-[#0a84ff] active:scale-[0.99]"
+              className="tap flex min-h-[76px] items-center gap-3.5 rounded-xl bg-white px-4 py-2.5 text-left ring-1 ring-black/[0.07] transition hover:ring-[#0a84ff]/60 active:bg-neutral-50"
             >
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#0a84ff]/10 text-[#0a84ff]">
-                <FolderOpen size={26} />
+              <span className="h-14 w-[42px] shrink-0 overflow-hidden rounded-[4px] bg-white shadow-[0_1px_3px_rgb(0_0_0/0.12)] ring-1 ring-black/[0.06]">
+                <Thumbnail blob={latest.thumbnail} small />
               </span>
               <span className="min-w-0">
-                <span className="block text-[17px] font-semibold">続きから編集</span>
-                <span className="block truncate text-[13px] text-neutral-500">{latest.name}</span>
+                <span className="block text-[12px] font-medium text-[#0a84ff]">続きから編集</span>
+                <span className="block truncate text-[15px] font-semibold">{latest.name}</span>
+                <span className="block text-[12px] text-neutral-500">{shortDate(latest.updatedAt)} 更新</span>
               </span>
             </button>
           ) : (
             <button
               type="button"
               onClick={createEmpty}
-              className="flex items-center gap-4 rounded-2xl bg-white p-5 text-left shadow-sm ring-1 ring-neutral-200 transition hover:ring-[#0a84ff]"
+              className="tap flex min-h-[76px] items-center gap-3.5 rounded-xl bg-white px-5 py-3.5 text-left ring-1 ring-black/[0.07] transition hover:ring-[#0a84ff]/60 active:bg-neutral-50"
             >
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-neutral-100">
-                <Plus size={26} />
-              </span>
-              <span className="text-[17px] font-semibold">空のプロジェクトを作成</span>
+              <Plus size={24} className="shrink-0 text-neutral-500" />
+              <span className="text-[16px] font-semibold">空のプロジェクトを作成</span>
             </button>
           )}
         </div>
 
-        <div className="mt-8 mb-3 flex items-center">
+        <div className="mt-9 mb-3 flex items-center">
           <h2 className="text-[17px] font-semibold">プロジェクト</h2>
           <div className="flex-1" />
           {selecting ? (
@@ -601,7 +608,7 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
         )}
 
         {!!projects?.length && (
-          <div className="mb-4 flex flex-wrap items-center gap-2">
+          <div className="mb-5 flex flex-wrap items-center gap-1">
             <FolderChip
               active={!q && view === 'all'}
               label="すべて"
@@ -654,7 +661,7 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
         {q && <p className="mb-3 text-[13px] text-neutral-500">すべてのフォルダから探しています（{visible.length}件）</p>}
 
         {!q && currentFolder && (
-          <div className="mb-4 flex flex-wrap items-center gap-1 rounded-2xl bg-white px-3 py-2 ring-1 ring-neutral-200">
+          <div className="mb-5 flex flex-wrap items-center gap-1 rounded-xl bg-white px-3 py-2 ring-1 ring-black/[0.07]">
             <FolderIcon size={19} className="shrink-0 text-[#0a84ff]" />
             <span className="mr-auto min-w-0 truncate px-1 text-[15px] font-semibold">{currentFolder.name}</span>
             <Button variant="ghost" className="h-9 px-2.5 text-[14px]" onClick={() => setRenameFolderTarget(currentFolder)}>
@@ -670,12 +677,13 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
         )}
 
         {projects && visible.length === 0 && (
-          <div className="rounded-2xl border-2 border-dashed border-neutral-300 px-6 py-14 text-center text-[14px] text-neutral-500">
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-neutral-300 px-6 py-12 text-center text-[14px] leading-relaxed text-neutral-500">
+            {!q && view === 'all' && <ImagePlus size={28} strokeWidth={1.5} className="text-neutral-400" />}
             {emptyMessage}
           </div>
         )}
 
-        <ul className="grid grid-cols-[repeat(auto-fill,minmax(168px,1fr))] gap-4">
+        <ul className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-x-5 gap-y-6">
           {visible.map((p) => {
             const isSel = selected.has(p.id);
             const fid = folderOf(p);
@@ -696,26 +704,28 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
                 type="button"
                 aria-pressed={selecting ? isSel : undefined}
                 onClick={() => (selecting ? toggleSelected(p.id) : onOpen(p.id))}
-                className={cx(
-                  'block w-full overflow-hidden rounded-2xl bg-white text-left shadow-sm ring-1 ring-neutral-200 transition hover:shadow-md hover:ring-[#0a84ff]',
-                  selecting && isSel && 'ring-[3px] ring-[#0a84ff]',
-                )}
+                title={`${p.name}\n更新 ${fmt.format(p.updatedAt)}\n作成 ${fmt.format(p.createdAt)}`}
+                className="block w-full text-left"
               >
-                <div className="relative aspect-[3/4] bg-neutral-100 p-2">
+                <div
+                  className={cx(
+                    'relative aspect-[3/4] overflow-hidden rounded-md bg-white shadow-[0_1px_3px_rgb(0_0_0/0.1)] ring-1 ring-black/[0.06] transition',
+                    'group-hover:shadow-[0_4px_14px_rgb(0_0_0/0.12)] group-hover:ring-[#0a84ff]/50',
+                    selecting && isSel && 'ring-[3px] ring-[#0a84ff] group-hover:ring-[#0a84ff]',
+                  )}
+                >
                   <Thumbnail blob={p.thumbnail} />
                   {showFolder && (
-                    <span className="absolute top-2 right-2 flex max-w-[85%] items-center gap-1 rounded-full bg-white/95 px-2 py-0.5 text-[11px] font-medium text-[#0a84ff] shadow-sm ring-1 ring-neutral-200">
-                      <FolderIcon size={12} className="shrink-0" />
+                    <span className="absolute top-1.5 right-1.5 flex max-w-[85%] items-center gap-1 rounded-md bg-white/95 px-1.5 py-0.5 text-[11px] text-neutral-600 shadow-[0_1px_2px_rgb(0_0_0/0.12)]">
+                      <FolderIcon size={12} className="shrink-0 text-neutral-400" />
                       <span className="truncate">{folderName.get(fid)}</span>
                     </span>
                   )}
                 </div>
-                <div className="px-3 py-2.5">
-                  <div className="truncate pr-6 text-[14px] font-semibold">{p.name}</div>
-                  <div className="mt-0.5 text-[11px] leading-snug text-neutral-500">
-                    更新 {fmt.format(p.updatedAt)}
-                    <br />
-                    作成 {fmt.format(p.createdAt)}・{p.pageCount}ページ
+                <div className={cx('pt-2', !selecting && 'pr-9')}>
+                  <div className="truncate text-[14px] font-semibold">{p.name}</div>
+                  <div className="mt-0.5 truncate text-[12px] text-neutral-500 tabular-nums">
+                    {sort === 'created' ? `作成 ${shortDate(p.createdAt)}` : shortDate(p.updatedAt)}・{p.pageCount}ページ
                   </div>
                 </div>
               </button>
@@ -731,10 +741,10 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
                 </span>
               )}
               {!selecting && (
-              <div data-menu className="absolute right-1.5 bottom-[52px]" ref={menuId === p.id ? menuAnchor : undefined}>
+              <div data-menu className="absolute right-0 -bottom-0.5" ref={menuId === p.id ? menuAnchor : undefined}>
                 <IconButton
                   label="メニュー"
-                  className="h-9 w-9 bg-white/90 shadow ring-1 ring-neutral-200"
+                  className="h-9 w-9 text-neutral-500"
                   onClick={() => setMenuId(menuId === p.id ? null : p.id)}
                 >
                   <Ellipsis size={18} />
