@@ -29,7 +29,6 @@ export function PageStrip({ onAddImages }: { onAddImages: () => void }) {
   const pages = useEditor((s) => s.history.present.pages);
   const currentId = useEditor((s) => s.currentPageId);
   const setCurrentPage = useEditor((s) => s.setCurrentPage);
-  const movePage = useEditor((s) => s.movePage);
   const movePageTo = useEditor((s) => s.movePageTo);
   const removePage = useEditor((s) => s.removePage);
   // 縦が短い画面（スマホ横向きなど）ではキャンバスを広く取るため最初は閉じておく
@@ -97,28 +96,6 @@ export function PageStrip({ onAddImages }: { onAddImages: () => void }) {
                       className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-[#ff3b30] shadow ring-1 ring-neutral-200"
                     >
                       <Trash2 size={13} />
-                    </button>
-                  </div>
-                )}
-                {active && pages.length > 1 && (
-                  <div data-no-drag className="absolute -bottom-0.5 left-1/2 flex -translate-x-1/2 gap-0.5">
-                    <button
-                      type="button"
-                      aria-label="前へ移動"
-                      disabled={i === 0}
-                      onClick={() => movePage(p.id, -1)}
-                      className="flex h-5 w-5 items-center justify-center rounded-full bg-white shadow ring-1 ring-neutral-200 disabled:opacity-30"
-                    >
-                      <ChevronLeft size={12} />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="後ろへ移動"
-                      disabled={i === pages.length - 1}
-                      onClick={() => movePage(p.id, 1)}
-                      className="flex h-5 w-5 items-center justify-center rounded-full bg-white shadow ring-1 ring-neutral-200 disabled:opacity-30"
-                    >
-                      <ChevronRight size={12} />
                     </button>
                   </div>
                 )}
