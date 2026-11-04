@@ -4,6 +4,7 @@ import type { Point, View } from '../lib/geometry';
 import { uid } from '../lib/id';
 import type { SavedHistory } from '../storage/db';
 import { isEmptyText, type EditorObject, type Page, type ProjectDoc, type TextObject } from '../types/model';
+import { fitTextToField } from '../canvas/fieldFit';
 import { createHistory, pushHistory, redoHistory, undoHistory, type HistoryState } from './history';
 
 export type ToolType =
@@ -374,7 +375,7 @@ export const useEditor = create<EditorState>()((set, get) => {
       });
       const doc = mapPage(s.history.present, te.pageId, (p) => {
         if (te.isNew) {
-          return text ? { ...p, objects: [...p.objects, { ...te.obj, text }] } : p;
+          return text ? { ...p, objects: [...p.objects, fitTextToField({ ...te.obj, text })] } : p;
         }
         const idx = p.objects.findIndex((o) => o.id === te.obj.id);
         if (idx < 0) return p;
@@ -382,7 +383,8 @@ export const useEditor = create<EditorState>()((set, get) => {
         if (!text && !keepEmpty) objects.splice(idx, 1);
         else {
           const prev = objects[idx];
-          const next = { ...te.obj, text };
+          // 回答欄の枠は、はみ出す文字だけ少し縮める（空に戻したら元の大きさ）
+          const next = text ? fitTextToField({ ...te.obj, text }) : { ...te.obj, text, fontSize: te.obj.fieldFontSize ?? te.obj.fontSize };
           if (JSON.stringify(prev) === JSON.stringify(next)) return p;
           objects[idx] = next;
         }

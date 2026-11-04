@@ -59,6 +59,7 @@ export function remapObjects(objs: EditorObject[], map: (p: Point) => Point, add
           outlineWidth: sz(o.outlineWidth),
           ...(o.fieldWidth !== undefined ? { fieldWidth: sz(o.fieldWidth) } : {}),
           ...(o.fieldHeight !== undefined ? { fieldHeight: sz(o.fieldHeight) } : {}),
+          ...(o.fieldFontSize !== undefined ? { fieldFontSize: sz(o.fieldFontSize) } : {}),
         } as EditorObject;
       case 'math':
         return { ...base, type: 'math', fontSize: sz(o.fontSize), width: sz(o.width), height: sz(o.height) } as EditorObject;

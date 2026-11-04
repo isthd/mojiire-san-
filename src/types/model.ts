@@ -73,6 +73,11 @@ export interface TextObject extends BaseObject {
   /** 未入力の枠（「ダブルタップで入力」）の表示サイズ。回答欄に自動配置したときは欄の大きさ */
   fieldWidth?: number;
   fieldHeight?: number;
+  /**
+   * 回答欄に自動配置したときの基準の文字サイズ（画像px）。
+   * 「完了」で文字が欄からはみ出すときだけ、これを上限に少し縮める（下限あり）。手動でサイズを変えると消える。
+   */
+  fieldFontSize?: number;
   /** 入力時に漢字へ変換した語とその読み（文字数を読みで数えるため。例: 邪悪 → じゃあく） */
   readings?: TextReading[];
   /**

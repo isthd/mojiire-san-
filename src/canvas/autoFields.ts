@@ -1,5 +1,6 @@
 // 回答欄の自動検出と「ダブルタップで入力」の文字枠の自動配置。
 import { detectAnswerFields, rgbaToGray, type AnswerField } from '../lib/answerFields';
+import { fieldFontSize, pageFieldFontSize } from '../lib/fieldFontSize';
 import { loadPageImage } from '../storage/imageCache';
 import { currentPageOf, useEditor } from '../store/editorStore';
 import { useSettings, type ToolSettings } from '../store/settingsStore';
@@ -30,21 +31,28 @@ async function detectOnPage(page: Page): Promise<AnswerField[]> {
   return detectAnswerFields(gray).map((f) => ({ ...f, x: f.x / k, y: f.y / k, width: f.width / k, height: f.height / k }));
 }
 
-/** 欄の大きさに合わせた文字枠（文字サイズ・位置・枠の大きさ） */
-export function textForField(f: AnswerField, s: ToolSettings['text'], unit: number): TextObject {
+/** 欄の短い辺（文字の大きさを決める辺） */
+function crossOf(f: AnswerField): number {
+  return f.vertical ? f.width : f.height;
+}
+
+/**
+ * 欄に置く文字枠（文字サイズ・位置・枠の大きさ）。
+ * pageSize はページ内でそろえた文字サイズ（pageFieldFontSize）。省略時は欄と設定から決める。
+ */
+export function textForField(f: AnswerField, s: ToolSettings['text'], unit: number, pageSize?: number): TextObject {
   const base = s.fontSize * unit;
   const lh = s.lineHeight;
   const margin = Math.min(f.width, f.height) * 0.08;
+  const fontSize = fieldFontSize({ cross: crossOf(f) }, pageSize ?? pageFieldFontSize([{ cross: crossOf(f) }], base));
   if (f.vertical) {
-    const fontSize = Math.min(f.width * 0.55, base * 1.5);
-    const obj = { ...createText({ x: 0, y: 0 }, { ...s, vertical: true }, unit), fontSize };
+    const obj = { ...createText({ x: 0, y: 0 }, { ...s, vertical: true }, unit), fontSize, fieldFontSize: fontSize };
     const colW = fontSize * lh + textPadding(obj) * 2;
     // 幅の広い欄は右端（1行目の位置）から書く
     const x = f.width > colW * 1.9 ? f.x + f.width - margin - colW : f.x + (f.width - colW) / 2;
     return { ...obj, x, y: f.y + margin, fieldWidth: colW, fieldHeight: f.height - margin * 2 };
   }
-  const fontSize = Math.min(f.height * 0.55, base * 1.5);
-  const obj = { ...createText({ x: 0, y: 0 }, { ...s, vertical: false }, unit), fontSize };
+  const obj = { ...createText({ x: 0, y: 0 }, { ...s, vertical: false }, unit), fontSize, fieldFontSize: fontSize };
   const blockH = fontSize * lh + textPadding(obj) * 2;
   // 高さのある欄（記述欄など）は左上から、それ以外は上下中央に置く
   const y = f.height > blockH * 1.9 ? f.y + margin : f.y + (f.height - blockH) / 2;
@@ -89,7 +97,9 @@ export async function autoPlaceAnswerFields(): Promise<void> {
     if (!cur || cur.id !== page.id) return;
     const settings = useSettings.getState().tools.text;
     const free = fields.filter((f) => !occupied(f, cur.objects));
-    const objs = free.map((f) => textForField(f, settings, cur.unit));
+    // ページ内の欄は同じ大きさの文字にそろえる（見つかった欄すべてで決める）
+    const pageSize = pageFieldFontSize(fields.map((f) => ({ cross: crossOf(f) })), settings.fontSize * cur.unit);
+    const objs = free.map((f) => textForField(f, settings, cur.unit, pageSize));
     useEditor.getState().addObjects(objs);
     if (objs.length) toast(`回答欄 ${objs.length} か所に文字枠を置きました。ダブルタップで入力できます`);
     else if (fields.length) toast('見つかった回答欄には、すでに文字が置かれています');

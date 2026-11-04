@@ -195,7 +195,11 @@ export function objectPatchFromSettings(
       ]) {
         if (has(k)) out[k] = patch[k];
       }
-      if (has('fontSize')) out.fontSize = (patch.fontSize as number) * unit;
+      if (has('fontSize')) {
+        out.fontSize = (patch.fontSize as number) * unit;
+        // 手動でサイズを決めたら、回答欄に合わせた自動調整はやめる
+        out.fieldFontSize = undefined;
+      }
       if (has('outlineWidth')) out.outlineWidth = (patch.outlineWidth as number) * unit;
       break;
     case 'math':

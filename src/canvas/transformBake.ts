@@ -51,6 +51,7 @@ export function bakeTransform(
           outlineWidth: obj.outlineWidth * s,
           // 回答欄に置いた未入力の枠は、枠の大きさも一緒に変える（そのままだと元の大きさに戻って見える）
           ...(obj.fieldWidth && obj.fieldHeight ? { fieldWidth: obj.fieldWidth * sx, fieldHeight: obj.fieldHeight * sy } : {}),
+          ...(obj.fieldFontSize ? { fieldFontSize: obj.fieldFontSize * s } : {}),
         },
         node: { ...base, scaleX: 1, scaleY: 1 },
       };
