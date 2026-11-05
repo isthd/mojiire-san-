@@ -213,6 +213,47 @@ function runMask(
   return out;
 }
 
+/** 線の向きと直角に測った太さが maxThick を超える部分（文字の行が並んだかたまり）を取り除く */
+function thinOnly(mask: Uint8Array, w: number, h: number, horizontal: boolean, maxThick: number): Uint8Array {
+  const out = mask.slice();
+  const lines = horizontal ? w : h; // 太さを測る向きに走査する
+  const len = horizontal ? h : w;
+  const at = horizontal ? (l: number, i: number) => i * w + l : (l: number, i: number) => l * w + i;
+  for (let l = 0; l < lines; l++) {
+    let start = -1;
+    for (let i = 0; i <= len; i++) {
+      const on = i < len && mask[at(l, i)];
+      if (on && start < 0) start = i;
+      if (!on && start >= 0) {
+        if (i - start > maxThick) for (let k = start; k < i; k++) out[at(l, k)] = 0;
+        start = -1;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * 表の罫線（水平線・垂直線）。
+ * 水平線は垂直線を除いたインクから探す（枠の縦線をまたいで、①の丸や文字の画とつながって線に見えるのを防ぐ）。
+ * 垂直線も同様。文字の行が並んでできる太いかたまりは線にしない。端は gap だけ延ばして角のすき間を閉じる
+ */
+function ruleLines(ink: Uint8Array, w: number, h: number, minH: number, minV: number, gap: number, maxThick: number) {
+  const hInit = thinOnly(runMask(ink, w, h, true, minH, gap), w, h, true, maxThick);
+  const vInit = thinOnly(runMask(ink, w, h, false, minV, gap), w, h, false, maxThick);
+  const without = (other: Uint8Array) => {
+    const out = new Uint8Array(w * h);
+    for (let i = 0; i < out.length; i++) out[i] = ink[i] & (other[i] ^ 1);
+    return out;
+  };
+  const hThin = thinOnly(runMask(without(vInit), w, h, true, minH, gap), w, h, true, maxThick);
+  const vThin = thinOnly(runMask(without(hInit), w, h, false, minV, gap), w, h, false, maxThick);
+  return {
+    hMask: runMask(hThin, w, h, true, minH, gap, gap),
+    vMask: runMask(vThin, w, h, false, minV, gap, gap),
+  };
+}
+
 function dilate(mask: Uint8Array, w: number, h: number): Uint8Array {
   const out = new Uint8Array(w * h);
   for (let y = 0; y < h; y++) {
@@ -355,8 +396,7 @@ function horizontalSegments(hMask: Uint8Array, w: number, h: number, maxThick: n
  */
 function wrappedBoxes(ink: Uint8Array, w: number, h: number, nextAbove: boolean): { first: Rect; second: Rect }[] {
   const { long, minH, minV, gap, maxThick, minSide } = lineParams(w, h);
-  const hMask = runMask(ink, w, h, true, minH, gap, gap);
-  const vMask = runMask(ink, w, h, false, minV, gap, gap);
+  const { hMask, vMask } = ruleLines(ink, w, h, minH, minV, gap, maxThick);
   const vSum = integral(w, h, (i) => vMask[i]);
   const inkSum = integral(w, h, (i) => ink[i]);
   const segs = horizontalSegments(hMask, w, h, maxThick, gap).sort((a, b) => a.y0 - b.y0);
@@ -439,37 +479,48 @@ function detectUpright(img: GrayImage, ink: Uint8Array): AnswerField[] {
   const inkIn = (x0: number, y0: number, x1: number, y1: number) => rectSum(inkSum, w, x0, y0, x1, y1);
 
   const { minH, minV, gap, maxThick, minSide } = lineParams(w, h);
-  const hMask = runMask(ink, w, h, true, minH, gap, gap);
-  const vMask = runMask(ink, w, h, false, minV, gap, gap);
+  const { hMask, vMask } = ruleLines(ink, w, h, minH, minV, gap, maxThick);
   const lines = new Uint8Array(w * h);
   for (let i = 0; i < lines.length; i++) lines[i] = hMask[i] | vMask[i];
   const walls = dilate(lines, w, h);
 
   const fields: AnswerField[] = [];
 
-  // ===== 罫線で囲まれた空欄 =====
-  for (const c of components(walls, w, h, 0)) {
-    if (c.border) continue;
-    const bw = c.x1 - c.x0 + 1;
-    const bh = c.y1 - c.y0 + 1;
-    if (bw < minSide || bh < minSide) continue;
-    if (bw * bh > w * h * 0.2) continue;
-    if (c.area / (bw * bh) < 0.85) continue; // 長方形でない
-    if (bw / bh > 40 || bh / bw > 15) continue;
-
+  // ===== 罫線で囲まれた欄 =====
+  const cells = tableCells(walls, w, h, minSide);
+  const wallSum = integral(w, h, (i) => walls[i]);
+  linkNeighbors(cells, (x0, y0, x1, y1) => rectSum(wallSum, w, x0, y0, x1, y1), maxThick * 2 + 6);
+  // 解答用紙（細い見出しのマス＋その右・下の広い回答のマス、が並ぶ表）か。
+  // 解答用紙では、回答のマスは文字が書かれていても回答欄とする
+  const answerCells = new Set(cells.filter(isAnswerCell));
+  const sheet = answerCells.size >= 4;
+  for (const c of cells) {
+    const { bw, bh } = c;
     const vertical = bh > bw * 1.8;
     // 内側（枠の際のにじみを除く）
     const m = Math.max(2, Math.round(Math.min(bw, bh) * 0.1));
     const ix0 = c.x0 + m;
     const iy0 = c.y0 + m;
-    const ix1 = c.x1 + 1 - m;
-    const iy1 = c.y1 + 1 - m;
+    let ix1 = c.x1 + 1 - m;
+    let iy1 = c.y1 + 1 - m;
     if (ix1 - ix0 < 3 || iy1 - iy0 < 3) continue;
+    const hasInk = inkIn(ix0, iy0, ix1, iy1) > (ix1 - ix0) * (iy1 - iy0) * 0.01;
+    // 見出しのマス（右や下に、より広いマスや複数のマスが続く）は回答欄にしない
+    if (hasInk && isHeaderCell(c)) continue;
+    const answer = sheet && answerCells.has(c);
+    const along = answer ? (c.right.length ? 'y' : c.left.length ? 'x' : bh > bw ? 'y' : 'x') : vertical ? 'y' : 'x';
+    // 欄の終わりに印刷された単位（J・℃・エネルギー など）は除く
+    const end = trailingLabel(inkIn, ix0, iy0, ix1, iy1, along);
+    let fw = bw;
+    let fh = bh;
+    if (end !== null && along === 'x') (ix1 = ix0 + end), (fw = ix1 - c.x0);
+    if (end !== null && along === 'y') (iy1 = iy0 + end), (fh = iy1 - c.y0);
     const area = (ix1 - ix0) * (iy1 - iy0);
     const total = inkIn(ix0, iy0, ix1, iy1);
+    const isVertical = answer ? along === 'y' : vertical;
 
     let start = 0; // 欄の先頭にある小さな番号（(1)・①など）を避けて書き始める位置
-    if (total > area * 0.01) {
+    if (total > area * 0.01 && !answer) {
       // 番号は横長の欄なら左、縦長の欄なら上にあるとみなす。
       // 細長い欄だけが対象（表のマスに短い文字が入っている場合は、記入済みの欄として扱う）
       const thin = vertical ? Math.min(bw, bh) : bh;
@@ -488,10 +539,11 @@ function detectUpright(img: GrayImage, ink: Uint8Array): AnswerField[] {
       if (cut < 0) continue; // 文字が書かれている欄
       start = cut + Math.max(4, Math.round(Math.min(bw, bh) * 0.2));
     }
+    if ((isVertical ? fh - start : fw - start) < minSide) continue;
     fields.push(
-      vertical
-        ? { x: c.x0, y: c.y0 + start, width: bw, height: bh - start, kind: 'box', vertical }
-        : { x: c.x0 + start, y: c.y0, width: bw - start, height: bh, kind: 'box', vertical },
+      isVertical
+        ? { x: c.x0, y: c.y0 + start, width: bw, height: fh - start, kind: 'box', vertical: true }
+        : { x: c.x0 + start, y: c.y0, width: fw - start, height: bh, kind: 'box', vertical: false },
     );
   }
 
@@ -549,6 +601,130 @@ function detectUpright(img: GrayImage, ink: Uint8Array): AnswerField[] {
   // 上から下、左から右の順
   const rowTol = long * 0.01;
   return fields.sort((a, b) => (Math.abs(a.y - b.y) > rowTol ? a.y - b.y : a.x - b.x));
+}
+
+interface Cell extends Component {
+  bw: number;
+  bh: number;
+  left: Cell[];
+  right: Cell[];
+  up: Cell[];
+  down: Cell[];
+}
+
+/** 罫線で囲まれた長方形のマス */
+function tableCells(walls: Uint8Array, w: number, h: number, minSide: number): Cell[] {
+  const out: Cell[] = [];
+  const labels = new Int32Array(w * h);
+  components(walls, w, h, 0, false, labels).forEach((c, k) => {
+    if (c.border) return;
+    const bw = c.x1 - c.x0 + 1;
+    const bh = c.y1 - c.y0 + 1;
+    if (bw < minSide || bh < minSide) return;
+    if (bw * bh > w * h * 0.2) return;
+    // 長方形か。中に書かれた文字の画（線と見なされた部分）の穴は埋めて測る
+    let filled = 0;
+    for (let y = c.y0; y <= c.y1; y++) {
+      let a = -1;
+      let b = -1;
+      for (let x = c.x0; x <= c.x1; x++) {
+        if (labels[y * w + x] !== k + 1) continue;
+        if (a < 0) a = x;
+        b = x;
+      }
+      if (a >= 0) filled += b - a + 1;
+    }
+    if (filled / (bw * bh) < 0.85) return;
+    if (bw / bh > 40 || bh / bw > 15) return;
+    out.push({ ...c, bw, bh, left: [], right: [], up: [], down: [] });
+  });
+  return out;
+}
+
+/** 罫線1本をはさんで隣り合うマスを結ぶ（間がすべて罫線のときだけ。表と表の間の余白は隣とみなさない） */
+function linkNeighbors(
+  cells: Cell[],
+  wallIn: (x0: number, y0: number, x1: number, y1: number) => number,
+  maxGap: number,
+): void {
+  for (const a of cells) {
+    for (const b of cells) {
+      if (a === b) continue;
+      // 左右
+      const gx = b.x0 - a.x1 - 1;
+      const oy0 = Math.max(a.y0, b.y0);
+      const oy1 = Math.min(a.y1, b.y1) + 1;
+      if (gx >= 0 && gx <= maxGap && oy1 - oy0 >= Math.min(a.bh, b.bh) * 0.5) {
+        if (gx === 0 || wallIn(a.x1 + 1, oy0, b.x0, oy1) >= gx * (oy1 - oy0) * 0.9) (a.right.push(b), b.left.push(a));
+      }
+      // 上下
+      const gy = b.y0 - a.y1 - 1;
+      const ox0 = Math.max(a.x0, b.x0);
+      const ox1 = Math.min(a.x1, b.x1) + 1;
+      if (gy >= 0 && gy <= maxGap && ox1 - ox0 >= Math.min(a.bw, b.bw) * 0.5) {
+        if (gy === 0 || wallIn(ox0, a.y1 + 1, ox1, b.y0) >= gy * (ox1 - ox0) * 0.9) (a.down.push(b), b.up.push(a));
+      }
+    }
+  }
+}
+
+/** 解答用紙の回答のマス：左（縦書きなら上）に細い見出しのマスがあり、その先にはマスが続かない広いマス */
+function isAnswerCell(c: Cell): boolean {
+  const widest = (cs: Cell[], k: 'bw' | 'bh') => Math.max(...cs.map((d) => d[k]));
+  if (!c.right.length && c.left.length && c.bw >= c.bh * 1.2 && c.bw >= widest(c.left, 'bw') * 1.8) return true;
+  if (!c.down.length && c.up.length && c.bh >= c.bw * 1.2 && c.bh >= widest(c.up, 'bh') * 1.8) return true;
+  return false;
+}
+
+/** 見出しのマス：右（または下）に、自分より十分広いマスか、複数のマスが続く（「1」「(1)」「①」「記号」など） */
+function isHeaderCell(c: Cell): boolean {
+  if (c.right.length >= 2 || c.right.some((d) => d.bw >= c.bw * 1.5)) return true;
+  if (c.bh > c.bw && (c.down.length >= 2 || c.down.some((d) => d.bh >= c.bh * 1.5))) return true;
+  return false;
+}
+
+/**
+ * 欄の終わり（横書きは右端、縦書きは下端）に印刷された単位などの文字のかたまりがあれば、
+ * その手前までの長さ（内側の始まりからの距離）を返す。なければ null
+ */
+function trailingLabel(
+  inkIn: (x0: number, y0: number, x1: number, y1: number) => number,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  along: 'x' | 'y',
+): number | null {
+  const span = along === 'x' ? x1 - x0 : y1 - y0;
+  const cross = along === 'x' ? y1 - y0 : x1 - x0;
+  if (span < cross * 1.5) return null;
+  const col = (i: number) => (along === 'x' ? inkIn(x0 + i, y0, x0 + i + 1, y1) : inkIn(x0, y0 + i, x1, y0 + i + 1));
+  const has = (i: number) => col(i) > 0;
+  // 端のいちばん近くにある文字
+  let last = span - 1;
+  while (last >= 0 && !has(last)) last--;
+  if (last < span - Math.max(span * 0.1, cross * 0.6)) return null;
+  // 文字のかたまりの始まり（字と字の間のすき間は越える）
+  const gapMax = Math.max(3, cross * 0.35);
+  let first = last;
+  let blank = 0;
+  for (let i = last - 1; i >= 0; i--) {
+    if (has(i)) (first = i), (blank = 0);
+    else if (++blank > gapMax) break;
+  }
+  if (first < span * 0.45 || last - first + 1 > span * 0.45) return null;
+  // 文字の大きさがある（破線のかけらや枠のにじみではない）
+  const a0 = along === 'x' ? x0 + first : y0 + first;
+  const a1 = along === 'x' ? x0 + last + 1 : y0 + last + 1;
+  const row = (j: number) => (along === 'x' ? inkIn(a0, y0 + j, a1, y0 + j + 1) : inkIn(x0 + j, a0, x0 + j + 1, a1));
+  let r0 = 0;
+  let r1 = cross - 1;
+  while (r0 < cross && !row(r0)) r0++;
+  while (r1 > r0 && !row(r1)) r1--;
+  if (r1 - r0 + 1 < cross * 0.25) return null;
+  // かたまりの手前は、すき間の分だけ余白をとる
+  const end = first - Math.max(2, Math.round(cross * 0.1));
+  return end >= cross ? end : null;
 }
 
 type Side = 'open' | 'close';

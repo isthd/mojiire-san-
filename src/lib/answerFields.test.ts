@@ -266,3 +266,57 @@ describe('detectAnswerFields（改行された欄）', () => {
     expect(fields[0].next).toBeUndefined();
   });
 });
+
+describe('detectAnswerFields（解答用紙）', () => {
+  /** 大問の番号の列・小問の番号の列・回答のマス が並ぶ解答用紙 */
+  function sheet(answers: ('blank' | 'filled' | 'unit')[]) {
+    const img = blank(1000, 800);
+    const top = 100;
+    const rowH = 60;
+    const n = answers.length;
+    box(img, 100, top, 600, rowH * n); // 外枠
+    fill(img, 140, top, 2, rowH * n); // 大問の列の右の線
+    fill(img, 200, top, 2, rowH * n); // 小問の列の右の線
+    fill(img, 112, top + 10, 16, 22); // 大問の番号「1」
+    for (let i = 0; i < n; i++) {
+      const y = top + i * rowH;
+      if (i) fill(img, 140, y, 560, 2);
+      fill(img, 160, y + 20, 26, 20); // 小問の番号「(1)」
+      if (answers[i] === 'filled') fill(img, 300, y + 15, 150, 30); // 手書きの答え
+      if (answers[i] === 'unit') fill(img, 668, y + 18, 20, 24); // 単位「J」
+    }
+    return img;
+  }
+
+  it('回答のマスをすべて検出し、番号の列は回答欄にしない', () => {
+    const fields = detectAnswerFields(sheet(['blank', 'filled', 'blank', 'filled', 'blank']));
+    expect(fields).toHaveLength(5);
+    for (const f of fields) {
+      expect(f.kind).toBe('box');
+      expect(f.vertical).toBe(false);
+      expect(f.x).toBeGreaterThan(200);
+      expect(f.width).toBeGreaterThan(450);
+    }
+  });
+
+  it('欄の終わりに印刷された単位の手前までを回答欄にする', () => {
+    const fields = detectAnswerFields(sheet(['unit', 'filled', 'unit', 'blank', 'blank']));
+    expect(fields).toHaveLength(5);
+    const withUnit = [fields[0], fields[2]];
+    for (const f of withUnit) {
+      expect(f.x + f.width).toBeLessThan(668);
+      expect(f.x + f.width).toBeGreaterThan(600);
+    }
+    expect(fields[3].x + fields[3].width).toBeGreaterThan(690);
+  });
+
+  it('文字の入った普通の表（解答用紙でない）のマスは回答欄にしない', () => {
+    const img = blank(1000, 800);
+    box(img, 100, 100, 600, 300);
+    for (let i = 1; i < 5; i++) fill(img, 100, 100 + i * 60, 600, 2);
+    fill(img, 300, 100, 2, 300);
+    fill(img, 500, 100, 2, 300);
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++) fill(img, 130 + c * 200, 118 + r * 60, 80, 24);
+    expect(detectAnswerFields(img)).toEqual([]);
+  });
+});
