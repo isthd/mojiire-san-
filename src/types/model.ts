@@ -78,6 +78,12 @@ export interface TextObject extends BaseObject {
    * 「完了」で文字が欄からはみ出すときだけ、これを上限に少し縮める（下限あり）。手動でサイズを変えると消える。
    */
   fieldFontSize?: number;
+  /**
+   * 改行された回答欄（行の終わりで切れて次の行に続く欄）の2つ目の欄。
+   * 1つ目の欄（横書きは fieldWidth、縦書きは fieldHeight の長さ）に入りきらない文字を、ここへ続けて書く。
+   * dx, dy は文字の原点からの相対位置、width, height は2つ目の欄の大きさ（画像px）
+   */
+  flow?: TextFlow;
   /** 入力時に漢字へ変換した語とその読み（文字数を読みで数えるため。例: 邪悪 → じゃあく） */
   readings?: TextReading[];
   /**
@@ -95,6 +101,20 @@ export interface TextObject extends BaseObject {
 /** 罫線（便箋）テキストボックスか */
 export function isRuledText(o: EditorObject): o is TextObject & { ruleGap: number; boxWidth: number; boxHeight: number } {
   return o.type === 'text' && !!o.ruleGap && !!o.boxWidth && !!o.boxHeight;
+}
+
+export interface TextFlow {
+  dx: number;
+  dy: number;
+  width: number;
+  height: number;
+}
+
+/** 改行された回答欄の文字枠か */
+export function isFlowText(
+  o: EditorObject,
+): o is TextObject & { flow: TextFlow; fieldWidth: number; fieldHeight: number } {
+  return o.type === 'text' && !!o.flow && !!o.fieldWidth && !!o.fieldHeight && !isRuledText(o);
 }
 
 export interface TextReading {

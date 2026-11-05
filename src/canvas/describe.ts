@@ -6,6 +6,7 @@ import { withAlpha } from '../lib/color';
 import {
   DEFAULT_LINE_HEIGHT,
   fontCss,
+  isFlowText,
   isRuledText,
   type DashStyle,
   type EditorObject,
@@ -42,19 +43,36 @@ export function placeholderSize(o: TextObject): { width: number; height: number 
   return o.vertical ? { width: line, height: o.fontSize * 6 } : { width: o.fontSize * 6, height: line };
 }
 
+/** 未入力の枠の当たり判定の最小の大きさ（画面px）。縮小表示で小さく見える枠もタップしやすいように */
+const PLACEHOLDER_HIT_MIN = 44;
+
 function placeholderNodes(o: TextObject): NodeDesc[] {
   const { width, height } = placeholderSize(o);
-  const vertical = !!o.vertical;
-  const len = PLACEHOLDER_LABEL.length + 1;
+  return placeholderBox(width, height, !!o.vertical, o.fontSize, PLACEHOLDER_LABEL, 0, 0);
+}
+
+/** 「ダブルタップで入力」の点線の枠（x, y は枠の左上） */
+function placeholderBox(
+  width: number,
+  height: number,
+  vertical: boolean,
+  fontSize: number,
+  label: string,
+  x: number,
+  y: number,
+): NodeDesc[] {
+  const len = Math.max(PLACEHOLDER_LABEL.length, label.length) + 1;
   // 枠に収まる大きさで案内文を表示
   const fs = vertical
-    ? Math.min(o.fontSize * 0.55, width * 0.55, height / len)
-    : Math.min(o.fontSize * 0.55, height * 0.55, width / len);
+    ? Math.min(fontSize * 0.55, width * 0.55, height / len)
+    : Math.min(fontSize * 0.55, height * 0.55, width / len);
   const stroke = Math.max(1, Math.min(width, height) * 0.03);
   return [
     {
       kind: 'Rect',
       config: {
+        x,
+        y,
         width,
         height,
         fill: 'rgba(10,132,255,0.08)',
@@ -62,12 +80,25 @@ function placeholderNodes(o: TextObject): NodeDesc[] {
         strokeWidth: stroke,
         dash: [stroke * 4, stroke * 3],
         cornerRadius: Math.min(width, height) * 0.12,
+        // 画面上で小さく見えるときは、見た目より広い範囲でタップを受ける
+        hitFunc: (context: Konva.Context, shape: Konva.Shape) => {
+          const k = Math.abs(shape.getAbsoluteScale().x) || 1;
+          const min = PLACEHOLDER_HIT_MIN / k;
+          const ex = Math.max(0, (min - width) / 2);
+          const ey = Math.max(0, (min - height) / 2);
+          context.beginPath();
+          context.rect(-ex, -ey, width + ex * 2, height + ey * 2);
+          context.closePath();
+          context.fillStrokeShape(shape);
+        },
       },
     },
     vertical
       ? {
           kind: 'Shape',
           config: {
+            x,
+            y,
             width,
             height,
             listening: false,
@@ -77,7 +108,7 @@ function placeholderNodes(o: TextObject): NodeDesc[] {
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
               ctx.fillStyle = '#0a84ff';
-              const chars = [...PLACEHOLDER_LABEL];
+              const chars = [...label];
               const top = (height - chars.length * fs) / 2;
               chars.forEach((ch, i) => ctx.fillText(ch, width / 2, top + fs * (i + 0.5)));
             },
@@ -86,7 +117,9 @@ function placeholderNodes(o: TextObject): NodeDesc[] {
       : {
           kind: 'Text',
           config: {
-            text: PLACEHOLDER_LABEL,
+            x,
+            y,
+            text: label,
             width,
             height,
             align: 'center',
@@ -99,6 +132,63 @@ function placeholderNodes(o: TextObject): NodeDesc[] {
           },
         },
   ];
+}
+
+/** 改行された回答欄の2つ目の欄に出す案内 */
+export const FLOW_LABEL = '（続き）';
+
+/** 行頭に来ないようにする文字（前の欄の末尾にぶら下げる） */
+const NO_LINE_START = '、。，．,.)）」』】〕〉》!！?？ー…々ぁぃぅぇぉっゃゅょァィゥェォッャュョ';
+
+/**
+ * 改行された回答欄の文字を、1つ目の欄に入る分と2つ目の欄へ続ける分に分ける。
+ * 1つ目の欄は1行（縦書きは1列）だけ。入力した改行があれば、そこで2つ目の欄へ移る
+ */
+export function splitFlowText(o: TextObject & { fieldWidth: number; fieldHeight: number }): [string, string] {
+  const nl = o.text.indexOf('\n');
+  const line = Array.from(nl < 0 ? o.text : o.text.slice(0, nl));
+  const rest = nl < 0 ? '' : o.text.slice(nl + 1);
+  const room = o.vertical ? o.fieldHeight : o.fieldWidth;
+  const fits = (n: number) => {
+    const m = measureText({ ...o, flow: undefined, text: line.slice(0, n).join('') });
+    return (o.vertical ? m.height : m.width) <= room + 1e-6;
+  };
+  // 入る文字数を二分探索で求める（少なくとも1文字は1つ目の欄に置く）
+  let lo = 1;
+  let hi = line.length;
+  if (line.length === 0 || fits(line.length)) return [line.join(''), rest];
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (fits(mid)) lo = mid;
+    else hi = mid - 1;
+  }
+  let n = lo;
+  // 句読点・閉じかっこなどは前の欄の末尾にぶら下げる
+  while (n < line.length && NO_LINE_START.includes(line[n])) n++;
+  const tail = line.slice(n).join('');
+  return [line.slice(0, n).join(''), nl < 0 ? tail : tail + '\n' + rest];
+}
+
+/** 文字（1かたまり）のノード。x, y は文字の原点 */
+function textBodyNodes(o: TextObject, x: number, y: number): NodeDesc[] {
+  const out: NodeDesc[] = [];
+  if (o.background) {
+    const m = measureText(o);
+    out.push({
+      kind: 'Rect',
+      config: {
+        x,
+        y,
+        width: m.width,
+        height: m.height,
+        fill: withAlpha(o.background, o.backgroundOpacity ?? 1),
+        cornerRadius: o.fontSize * 0.15,
+      },
+    });
+  }
+  if (o.vertical) out.push({ kind: 'Shape', config: { ...verticalTextConfig(o), x, y } });
+  else out.push({ kind: 'Text', config: { ...textConfig(o), x, y } });
+  return out;
 }
 
 export const TEXT_LINE_HEIGHT = DEFAULT_LINE_HEIGHT;
@@ -162,6 +252,8 @@ let measurer: Konva.Text | null = null;
 /** テキストの表示サイズ（画像px）を計測 */
 export function measureText(o: TextObject): { width: number; height: number } {
   if (isRuledText(o)) return { width: o.boxWidth, height: o.boxHeight };
+  // 改行された回答欄は1つ目の欄の分
+  if (isFlowText(o)) return measureText({ ...o, flow: undefined, text: splitFlowText(o)[0] });
   if (o.vertical) {
     const l = verticalLayoutOf(o);
     return { width: l.width, height: l.height };
@@ -371,23 +463,24 @@ export function describeObject(o: EditorObject, ctx: DescribeContext): NodeDesc 
         break;
       }
       if (o.text.trim() === '') {
-        if (ctx.placeholder) children.push(...placeholderNodes(o));
+        if (ctx.placeholder) {
+          children.push(...placeholderNodes(o));
+          // 改行された回答欄は、続きの欄も点線で示す
+          if (isFlowText(o)) {
+            const f = o.flow;
+            children.push(...placeholderBox(f.width, f.height, !!o.vertical, o.fontSize, FLOW_LABEL, f.dx, f.dy));
+          }
+        }
         break;
       }
-      if (o.background) {
-        const m = measureText(o);
-        children.push({
-          kind: 'Rect',
-          config: {
-            width: m.width,
-            height: m.height,
-            fill: withAlpha(o.background, o.backgroundOpacity ?? 1),
-            cornerRadius: o.fontSize * 0.15,
-          },
-        });
+      if (isFlowText(o)) {
+        const [head, tail] = splitFlowText(o);
+        const plain = { ...o, flow: undefined };
+        if (head.trim()) children.push(...textBodyNodes({ ...plain, text: head }, 0, 0));
+        if (tail.trim()) children.push(...textBodyNodes({ ...plain, text: tail }, o.flow.dx, o.flow.dy));
+        break;
       }
-      if (o.vertical) children.push({ kind: 'Shape', config: verticalTextConfig(o) });
-      else children.push({ kind: 'Text', config: textConfig(o) });
+      children.push(...textBodyNodes(o, 0, 0));
       break;
     }
     case 'math': {

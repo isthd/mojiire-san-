@@ -72,6 +72,26 @@ export function cancelCanvasDrags(): void {
   for (const el of [...els.values()]) el.node.stopDrag();
 }
 
+/** 文字・数式の入力を始める（ダブルタップ） */
+function startEditingObject(id: string): void {
+  const st = useEditor.getState();
+  const obj = currentPageOf(st)?.objects.find((o) => o.id === id);
+  if (!obj || (obj.type !== 'text' && obj.type !== 'math')) return;
+  cancelCanvasDrags();
+  if (obj.type === 'text') beginTextEdit(obj, false);
+  else st.openMathEditor({ targetId: obj.id, at: null, initialLatex: obj.latex });
+}
+
+// ダブルタップの判定（Konva の判定は2回とも同じ図形に当たる必要があり、小さな枠や
+// 選択後に出る変形ハンドルに2回目を取られて失敗しやすいため、位置のずれを許して自前で判定する）
+const DOUBLE_TAP_MS = 400;
+/** タップとみなす指の動き（画面px） */
+const TAP_MOVE = { touch: 10, other: 5 };
+/** 枠の外でも、この距離（画面px）までは枠をタップしたとみなす */
+const TAP_REACH = { touch: 14, other: 4 };
+/** 1回目と2回目のタップ位置のずれの許容（画面px） */
+const DOUBLE_TAP_SPREAD = { touch: 36, other: 10 };
+
 function isTypingTarget(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;
   return t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'MATH-FIELD'].includes(t.tagName);
@@ -111,6 +131,12 @@ export function EditorCanvas() {
   const trRef = useRef<Konva.Transformer>(null);
   const gesture = useRef<Gesture>({ kind: 'none' });
   const pointers = useRef(new Map<number, Point & { type: string }>());
+  /** タップ判定中の指（押した位置・時刻） */
+  const tapDown = useRef<{ id: number; p: Point; t: number; touch: boolean } | null>(null);
+  /** 直前のタップ（ダブルタップ判定用） */
+  const lastTap = useRef<{ p: Point; t: number; objId: string } | null>(null);
+  /** タッチのダブルタップで、touchend で入力を始める枠（iPad はタッチ終了の処理中でないとキーボードが出ない） */
+  const pendingEdit = useRef<string | null>(null);
   const spaceDown = useRef(false);
   const fittedPage = useRef<string | null>(null);
 
@@ -310,6 +336,16 @@ export function EditorCanvas() {
       const g = gesture.current;
       const st = useEditor.getState();
 
+      const touch = e.pointerType === 'touch';
+      // 指の小さな揺れでドラッグが始まり、タップが取り消されないように
+      Konva.dragDistance = touch ? TAP_MOVE.touch : 4;
+      if (pointers.current.size === 1 && st.tool === 'select' && (e.pointerType !== 'mouse' || e.button === 0)) {
+        tapDown.current = { id: e.pointerId, p, t: e.timeStamp, touch };
+      } else {
+        tapDown.current = null;
+        lastTap.current = null;
+      }
+
       // ペンで描画中は手のひらの接触を無視（誤タッチ防止）
       if (g.kind === 'draw' && g.pointerType === 'pen' && e.pointerType === 'touch') return;
 
@@ -499,6 +535,80 @@ export function EditorCanvas() {
       }
     };
 
+    /** 画面上の点 p から reach 以内にある文字・数式（いちばん近いもの。重なっていれば上のもの） */
+    const pickEditable = (p: Point, reach: number): string | null => {
+      const stage = stageRef.current;
+      const layer = objLayerRef.current;
+      const pg = currentPageOf(useEditor.getState());
+      if (!stage || !layer || !pg) return null;
+      const editable = (id: string | null) => {
+        const o = id ? pg.objects.find((x) => x.id === id) : undefined;
+        return o && (o.type === 'text' || o.type === 'math') && !o.locked ? o.id : null;
+      };
+      const hitId = findObjId(stage.getIntersection(p));
+      if (hitId) return editable(hitId);
+      let best: string | null = null;
+      let bestD = Infinity;
+      for (const o of pg.objects) {
+        if (!editable(o.id)) continue;
+        const n = layer.findOne('#' + o.id);
+        if (!n || !n.isVisible()) continue;
+        const r = n.getClientRect();
+        const dx = Math.max(r.x - p.x, 0, p.x - (r.x + r.width));
+        const dy = Math.max(r.y - p.y, 0, p.y - (r.y + r.height));
+        const d = Math.hypot(dx, dy);
+        if (d <= reach && d <= bestD) {
+          best = o.id;
+          bestD = d;
+        }
+      }
+      return best;
+    };
+
+    const onTapUp = (e: PointerEvent) => {
+      const d = tapDown.current;
+      if (!d || d.id !== e.pointerId) return;
+      tapDown.current = null;
+      const st = useEditor.getState();
+      const p = local(e);
+      const kind = d.touch ? 'touch' : 'other';
+      if (st.tool !== 'select' || st.textEdit || Math.hypot(p.x - d.p.x, p.y - d.p.y) > TAP_MOVE[kind] || e.timeStamp - d.t > 500) {
+        lastTap.current = null;
+        return;
+      }
+      const id = pickEditable(p, TAP_REACH[kind]);
+      const prev = lastTap.current;
+      if (
+        id &&
+        prev &&
+        prev.objId === id &&
+        d.t - prev.t < DOUBLE_TAP_MS &&
+        Math.hypot(p.x - prev.p.x, p.y - prev.p.y) <= DOUBLE_TAP_SPREAD[kind]
+      ) {
+        lastTap.current = null;
+        if (d.touch) {
+          // touchend で開く。touchend が来ない環境のための予備
+          pendingEdit.current = id;
+          setTimeout(() => {
+            if (pendingEdit.current !== id) return;
+            pendingEdit.current = null;
+            startEditingObject(id);
+          }, 60);
+        } else startEditingObject(id);
+        return;
+      }
+      lastTap.current = id ? { p, t: e.timeStamp, objId: id } : null;
+      // 枠のすぐ外をタップしたときも、その枠を選ぶ
+      if (id && !st.selectedIds.includes(id) && !findObjId(stageRef.current?.getIntersection(p))) st.select([id]);
+    };
+
+    const onTouchEnd = () => {
+      const id = pendingEdit.current;
+      if (!id) return;
+      pendingEdit.current = null;
+      startEditingObject(id);
+    };
+
     const finish = (e: PointerEvent) => {
       const g = gesture.current;
       const p = pointers.current.get(e.pointerId) ?? local(e);
@@ -584,7 +694,9 @@ export function EditorCanvas() {
 
     wrap.addEventListener('pointerdown', onDown);
     wrap.addEventListener('pointermove', onMove);
+    wrap.addEventListener('pointerup', onTapUp);
     wrap.addEventListener('pointerup', finish);
+    wrap.addEventListener('touchend', onTouchEnd);
     wrap.addEventListener('pointercancel', finish);
     wrap.addEventListener('wheel', onWheel, { passive: false });
     wrap.addEventListener('contextmenu', prevent);
@@ -594,7 +706,9 @@ export function EditorCanvas() {
     return () => {
       wrap.removeEventListener('pointerdown', onDown);
       wrap.removeEventListener('pointermove', onMove);
+      wrap.removeEventListener('pointerup', onTapUp);
       wrap.removeEventListener('pointerup', finish);
+      wrap.removeEventListener('touchend', onTouchEnd);
       wrap.removeEventListener('pointercancel', finish);
       wrap.removeEventListener('wheel', onWheel);
       wrap.removeEventListener('contextmenu', prevent);
@@ -645,6 +759,15 @@ export function EditorCanvas() {
     for (const node of tr.nodes()) {
       const obj = pg.objects.find((o) => o.id === node.id());
       if (!obj) continue;
+      // ハンドルを触っただけで変わっていない（タップ）なら何もしない
+      if (
+        node.scaleX() === 1 &&
+        node.scaleY() === 1 &&
+        Math.abs(node.rotation() - obj.rotation) < 1e-6 &&
+        Math.abs(node.x() - obj.x) < 1e-6 &&
+        Math.abs(node.y() - obj.y) < 1e-6
+      )
+        continue;
       const { patch, node: attrs } = bakeTransform(obj, {
         x: node.x(),
         y: node.y(),
@@ -655,6 +778,7 @@ export function EditorCanvas() {
       node.setAttrs(attrs);
       patches[obj.id] = patch;
     }
+    if (!Object.keys(patches).length) return;
     st.updateObjects(patches);
     // 変形後の見た目を次回のツール設定として記憶
     const ids = Object.keys(patches);
@@ -694,17 +818,6 @@ export function EditorCanvas() {
     if (Object.keys(patches).length) st.updateObjects(patches);
   };
 
-  // 文字枠（未入力の枠を含む）はダブルタップで入力を始める（1回のタップは選択・移動のみ）
-  const onLayerDblTap = (e: Konva.KonvaEventObject<Event>) => {
-    const st = useEditor.getState();
-    if (st.tool !== 'select') return;
-    const pg = currentPageOf(st);
-    const obj = pg?.objects.find((o) => o.id === findObjId(e.target));
-    if (obj?.type === 'text' || obj?.type === 'math') cancelCanvasDrags();
-    if (obj?.type === 'text') beginTextEdit(obj, false);
-    else if (obj?.type === 'math') st.openMathEditor({ targetId: obj.id, at: null, initialLatex: obj.latex });
-  };
-
   const hitPad = page ? 12 * page.unit : 10;
   const anchor = coarse ? 22 : 11;
   const cursor = spacePan ? 'grab' : CURSORS[tool];
@@ -730,8 +843,6 @@ export function EditorCanvas() {
             ref={objLayerRef}
             onPointerDown={onLayerPointerDown}
             onDragEnd={onLayerDragEnd}
-            onDblClick={onLayerDblTap}
-            onDblTap={onLayerDblTap}
           >
             <Rect
               width={page.width}

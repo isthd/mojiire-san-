@@ -205,3 +205,64 @@ describe('detectAnswerFields（かっこ）', () => {
     expect(fields[0].y + fields[0].height).toBeLessThanOrEqual(351);
   });
 });
+
+describe('detectAnswerFields（改行された欄）', () => {
+  /** 片側だけ縦線で閉じた枠（open: 開いている側） */
+  function openBox(img: GrayImage, x: number, y: number, w: number, h: number, open: 'left' | 'right' | 'top' | 'bottom') {
+    const t = 2;
+    if (open !== 'top') fill(img, x, y, w, t);
+    if (open !== 'bottom') fill(img, x, y + h - t, w, t);
+    if (open !== 'left') fill(img, x, y, t, h);
+    if (open !== 'right') fill(img, x + w - t, y, t, h);
+  }
+
+  it('行の終わりで切れて次の行の頭に続く枠を、1つの欄（続きつき）として検出する', () => {
+    const img = blank(800, 600);
+    // 上下の線と左の縦線（右が開いている）
+    fill(img, 500, 100, 280, 2);
+    fill(img, 500, 150, 280, 2);
+    fill(img, 500, 100, 2, 52);
+    // 次の行：上下の線と右の縦線（左が開いている）
+    fill(img, 20, 200, 260, 2);
+    fill(img, 20, 250, 260, 2);
+    fill(img, 278, 200, 2, 52);
+    const fields = detectAnswerFields(img);
+    expect(fields).toHaveLength(1);
+    const f = fields[0];
+    expect(f.vertical).toBe(false);
+    expect(f.x).toBeGreaterThan(500);
+    expect(f.y).toBeGreaterThan(100);
+    expect(f.y + f.height).toBeLessThanOrEqual(151);
+    expect(f.next).toBeDefined();
+    expect(f.next!.x).toBeLessThan(40);
+    expect(f.next!.x + f.next!.width).toBeLessThanOrEqual(279);
+    expect(f.next!.y).toBeGreaterThan(200);
+  });
+
+  it('縦書きで列の下で切れて次の列の上に続く枠を検出する', () => {
+    const img = blank(600, 800);
+    // 右の列：左右の線と上の横線（下が開いている）
+    openBox(img, 400, 500, 52, 290, 'bottom');
+    // 左の列：左右の線と下の横線（上が開いている）
+    openBox(img, 300, 10, 52, 260, 'top');
+    const fields = detectAnswerFields(img);
+    expect(fields).toHaveLength(1);
+    const f = fields[0];
+    expect(f.vertical).toBe(true);
+    expect(f.x).toBeGreaterThan(400);
+    expect(f.y).toBeGreaterThan(500);
+    expect(f.next).toBeDefined();
+    expect(f.next!.x).toBeGreaterThan(300);
+    expect(f.next!.x + f.next!.width).toBeLessThan(352);
+    expect(f.next!.y + f.next!.height).toBeLessThanOrEqual(270);
+  });
+
+  it('続きのない片側だけの枠や、閉じた枠には続きをつけない', () => {
+    const img = blank(800, 600);
+    openBox(img, 500, 100, 280, 52, 'right');
+    box(img, 100, 300, 200, 60);
+    const fields = detectAnswerFields(img);
+    expect(fields).toHaveLength(1);
+    expect(fields[0].next).toBeUndefined();
+  });
+});

@@ -2,6 +2,7 @@
 // 手順：適応的二値化 → 長い水平・垂直線だけを取り出す → 線で囲まれた領域のうち、中が空白の長方形を回答欄とする。
 // 下線だけの欄（＿＿＿）は、上側が空白の単独の水平線として検出する。
 // かっこの欄（〔　〕・（　））は、向かい合うかっこの組で中が空白のものを検出する（縦書きの ︹　︺・︵　︶ も）。
+// 改行された欄（行の終わりで枠が切れて、次の行の頭に続く欄）は、片側だけ縦線で閉じた枠の組として検出する。
 
 export interface GrayImage {
   width: number;
@@ -19,6 +20,15 @@ export interface AnswerField {
   kind: 'box' | 'underline' | 'bracket';
   /** 縦長の欄（縦書き向き） */
   vertical: boolean;
+  /** 改行された欄の続き（次の行・次の列の頭の欄）。この欄に入りきらない文字をここへ続けて書く */
+  next?: Rect;
+}
+
+interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export function rgbaToGray(rgba: Uint8ClampedArray, width: number, height: number): GrayImage {
@@ -295,14 +305,132 @@ export function detectAnswerFields(img: GrayImage): AnswerField[] {
   const t = (skew * Math.PI) / 180;
   const c = Math.cos(t);
   const s = Math.sin(t);
-  return detectUpright(upright, inkMask(upright)).map((f) => {
-    const du = f.x + f.width / 2 - w / 2;
-    const dv = f.y + f.height / 2 - h / 2;
+  const back = <T extends Rect>(r: T): T => {
+    const du = r.x + r.width / 2 - w / 2;
+    const dv = r.y + r.height / 2 - h / 2;
     const cx = du * c - dv * s + w / 2;
     const cy = du * s + dv * c + h / 2;
-    return { ...f, x: cx - f.width / 2, y: cy - f.height / 2 };
-  });
+    return { ...r, x: cx - r.width / 2, y: cy - r.height / 2 };
+  };
+  return detectUpright(upright, inkMask(upright)).map((f) => (f.next ? { ...back(f), next: back(f.next) } : back(f)));
 }
+
+/** 線の太さなどの目安（画像の大きさから決める） */
+function lineParams(w: number, h: number) {
+  const long = Math.max(w, h);
+  return {
+    long,
+    minH: Math.max(15, Math.round(long * 0.02)),
+    minV: Math.max(10, Math.round(long * 0.012)),
+    // かすれ・途切れた線もつなげる
+    gap: Math.max(2, Math.round(long * 0.004)),
+    maxThick: Math.max(4, Math.round(long * 0.006)),
+    minSide: Math.max(8, Math.round(long * 0.012)),
+  };
+}
+
+/** 水平線のマスクから、細い水平線を取り出す。同じ高さで途切れた線のかけらは1本にまとめる */
+function horizontalSegments(hMask: Uint8Array, w: number, h: number, maxThick: number, gap: number): Component[] {
+  const segs = components(hMask, w, h, 1)
+    .filter((c) => c.y1 - c.y0 + 1 <= maxThick)
+    .sort((a, b) => a.x0 - b.x0);
+  const merged: Component[] = [];
+  for (const c of segs) {
+    const prev = merged.find(
+      (p) => c.x0 - p.x1 <= gap * 3 && Math.abs((c.y0 + c.y1) / 2 - (p.y0 + p.y1) / 2) <= maxThick / 2,
+    );
+    if (prev && Math.max(prev.y1, c.y1) - Math.min(prev.y0, c.y0) + 1 <= maxThick) {
+      prev.x1 = Math.max(prev.x1, c.x1);
+      prev.y0 = Math.min(prev.y0, c.y0);
+      prev.y1 = Math.max(prev.y1, c.y1);
+    } else merged.push({ ...c });
+  }
+  return merged;
+}
+
+/**
+ * 改行された欄（横書き）：上下2本の線のうち、片側だけ縦線で閉じた空の枠を探し、
+ * 「終わりが開いた枠」と、次の行（nextAbove なら上の行）の「始まりが開いた枠」を組にする。
+ * 縦書きは画像を転置して同じ処理を使う（次の列は左＝転置後の上）
+ */
+function wrappedBoxes(ink: Uint8Array, w: number, h: number, nextAbove: boolean): { first: Rect; second: Rect }[] {
+  const { long, minH, minV, gap, maxThick, minSide } = lineParams(w, h);
+  const hMask = runMask(ink, w, h, true, minH, gap, gap);
+  const vMask = runMask(ink, w, h, false, minV, gap, gap);
+  const vSum = integral(w, h, (i) => vMask[i]);
+  const inkSum = integral(w, h, (i) => ink[i]);
+  const segs = horizontalSegments(hMask, w, h, maxThick, gap).sort((a, b) => a.y0 - b.y0);
+  const ew = gap * 2 + 3; // 線の端の、縦線を探す幅
+  const opens: (Rect & { end: boolean })[] = [];
+  for (let i = 0; i < segs.length; i++) {
+    const t = segs[i];
+    for (let j = i + 1; j < segs.length; j++) {
+      const b = segs[j];
+      const inner = b.y0 - t.y1 - 1;
+      if (inner > long * 0.1) break;
+      if (inner < minSide) continue;
+      const tol = Math.max(gap * 3, inner * 0.3);
+      if (Math.abs(t.x0 - b.x0) > tol || Math.abs(t.x1 - b.x1) > tol) continue;
+      const x0 = Math.max(t.x0, b.x0);
+      const x1 = Math.min(t.x1, b.x1);
+      if (x1 - x0 + 1 < Math.max(minSide, inner) + ew * 2) continue;
+      // 間にほかの線がある（2本の線は向かい合っていない）
+      const between = segs.some(
+        (m) => m !== t && m !== b && m.y0 > t.y1 && m.y1 < b.y0 && Math.min(m.x1, x1) - Math.max(m.x0, x0) > (x1 - x0) * 0.5,
+      );
+      if (between) continue;
+      const wall = (xa: number, xb: number) =>
+        rectSum(vSum, w, Math.max(0, xa), t.y1 + 1, Math.min(w, xb), b.y0) >= inner * 0.7;
+      const left = wall(x0, x0 + ew);
+      const right = wall(x1 - ew + 1, x1 + 1);
+      if (left === right) continue; // 両側が閉じた枠（ほかで検出済み）か、ただの平行線
+      if (wall(x0 + ew, x1 - ew + 1)) continue; // 途中に仕切りがある（表など）
+      const ix0 = left ? x0 + ew : x0 + gap;
+      const ix1 = right ? x1 - ew + 1 : x1 - gap + 1;
+      const iy0 = t.y1 + 2;
+      const iy1 = b.y0 - 1;
+      if (ix1 - ix0 < minSide || iy1 - iy0 < 3) continue;
+      const m = Math.max(2, Math.round(inner * 0.1));
+      const area = Math.max(1, (ix1 - ix0 - m * 2) * (iy1 - iy0 - m * 2));
+      if (rectSum(inkSum, w, ix0 + m, iy0 + m, ix1 - m, iy1 - m) > area * 0.01) continue; // 文字が書かれている
+      opens.push({ x: ix0, y: iy0, width: ix1 - ix0, height: iy1 - iy0, end: left });
+      break;
+    }
+  }
+  const firsts = opens.filter((o) => o.end);
+  const seconds = opens.filter((o) => !o.end);
+  const used = new Set<Rect>();
+  const out: { first: Rect; second: Rect }[] = [];
+  for (const a of firsts) {
+    let best: Rect | null = null;
+    let bestD = Infinity;
+    for (const b of seconds) {
+      if (used.has(b)) continue;
+      const ratio = b.height / a.height;
+      if (ratio < 0.7 || ratio > 1.45) continue;
+      // 1つ目は行の後ろ、続きは行の頭
+      if (b.x >= a.x || b.x + b.width > a.x + a.width) continue;
+      const d = nextAbove ? a.y - (b.y + b.height) : b.y - (a.y + a.height);
+      if (d < -a.height * 0.2 || d > a.height * 3) continue;
+      if (d < bestD) {
+        best = b;
+        bestD = d;
+      }
+    }
+    if (!best) continue;
+    used.add(best);
+    out.push({ first: a, second: best });
+  }
+  return out;
+}
+
+function transpose(mask: Uint8Array, w: number, h: number): Uint8Array {
+  const out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) out[x * h + y] = mask[y * w + x];
+  return out;
+}
+
+const flip = (r: Rect): Rect => ({ x: r.y, y: r.x, width: r.height, height: r.width });
 
 function detectUpright(img: GrayImage, ink: Uint8Array): AnswerField[] {
   const { width: w, height: h } = img;
@@ -310,10 +438,7 @@ function detectUpright(img: GrayImage, ink: Uint8Array): AnswerField[] {
   const inkSum = integral(w, h, (i) => ink[i]);
   const inkIn = (x0: number, y0: number, x1: number, y1: number) => rectSum(inkSum, w, x0, y0, x1, y1);
 
-  const minH = Math.max(15, Math.round(long * 0.02));
-  const minV = Math.max(10, Math.round(long * 0.012));
-  // かすれ・途切れた線もつなげる
-  const gap = Math.max(2, Math.round(long * 0.004));
+  const { minH, minV, gap, maxThick, minSide } = lineParams(w, h);
   const hMask = runMask(ink, w, h, true, minH, gap, gap);
   const vMask = runMask(ink, w, h, false, minV, gap, gap);
   const lines = new Uint8Array(w * h);
@@ -321,7 +446,6 @@ function detectUpright(img: GrayImage, ink: Uint8Array): AnswerField[] {
   const walls = dilate(lines, w, h);
 
   const fields: AnswerField[] = [];
-  const minSide = Math.max(8, Math.round(long * 0.012));
 
   // ===== 罫線で囲まれた空欄 =====
   for (const c of components(walls, w, h, 0)) {
@@ -371,26 +495,26 @@ function detectUpright(img: GrayImage, ink: Uint8Array): AnswerField[] {
     );
   }
 
+  // ===== 改行された欄（行の終わりで切れて、次の行・列の頭に続く欄） =====
+  const wrapped = [
+    ...wrappedBoxes(ink, w, h, false).map((p) => ({ ...p, vertical: false })),
+    ...wrappedBoxes(transpose(ink, w, h), h, w, true).map((p) => ({
+      first: flip(p.first),
+      second: flip(p.second),
+      vertical: true,
+    })),
+  ];
+  for (const p of wrapped) {
+    if (fields.some((b) => overlaps(b, p.first, 2) || overlaps(b, p.second, 2))) continue;
+    fields.push({ ...p.first, kind: 'box', vertical: p.vertical, next: p.second });
+  }
+  const taken = (f: AnswerField) => fields.some((b) => overlaps(f, b, 2) || (!!b.next && overlaps(f, b.next, 2)));
+
   // ===== 下線だけの欄 =====
-  const maxThick = Math.max(4, Math.round(long * 0.006));
   const minLen = Math.max(minH * 1.5, long * 0.04);
   const hSum = integral(w, h, (i) => hMask[i]);
   const vSum = integral(w, h, (i) => vMask[i]);
-  // 同じ高さで途切れた線のかけらを1本にまとめる
-  const segs = components(hMask, w, h, 1)
-    .filter((c) => c.y1 - c.y0 + 1 <= maxThick)
-    .sort((a, b) => a.x0 - b.x0);
-  const merged: Component[] = [];
-  for (const c of segs) {
-    const prev = merged.find(
-      (p) => c.x0 - p.x1 <= gap * 3 && Math.abs((c.y0 + c.y1) / 2 - (p.y0 + p.y1) / 2) <= maxThick / 2,
-    );
-    if (prev && Math.max(prev.y1, c.y1) - Math.min(prev.y0, c.y0) + 1 <= maxThick) {
-      prev.x1 = Math.max(prev.x1, c.x1);
-      prev.y0 = Math.min(prev.y0, c.y0);
-      prev.y1 = Math.max(prev.y1, c.y1);
-    } else merged.push({ ...c });
-  }
+  const merged = horizontalSegments(hMask, w, h, maxThick, gap);
   for (const c of merged) {
     const lw = c.x1 - c.x0 + 1;
     if (lw < minLen || lw > w * 0.7) continue;
@@ -412,13 +536,13 @@ function detectUpright(img: GrayImage, ink: Uint8Array): AnswerField[] {
     if (inkIn(c.x0, y0, c.x1 + 1, c.y0 - pad) > area * 0.006) continue; // 線の上に文字がある（傍線など）
     // 延ばした分を除いた、元の線の長さ
     const f: AnswerField = { x: c.x0 + gap, y: y0, width: lw - gap * 2, height: ah, kind: 'underline', vertical: false };
-    if (fields.some((b) => overlaps(f, b, 2))) continue;
+    if (taken(f)) continue;
     fields.push(f);
   }
 
   // ===== かっこの欄 =====
   for (const f of detectBrackets(ink, w, h, inkIn)) {
-    if (fields.some((b) => overlaps(f, b, 2))) continue;
+    if (taken(f)) continue;
     fields.push(f);
   }
 

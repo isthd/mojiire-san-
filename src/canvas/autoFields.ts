@@ -39,13 +39,28 @@ function crossOf(f: AnswerField): number {
 /**
  * 欄に置く文字枠（文字サイズ・位置・枠の大きさ）。
  * pageSize はページ内でそろえた文字サイズ（pageFieldFontSize）。省略時は欄と設定から決める。
+ * 改行された欄は、続きの欄（flow）も持たせる。文字の大きさは2つの欄でそろえる（小さい方）
  */
 export function textForField(f: AnswerField, s: ToolSettings['text'], unit: number, pageSize?: number): TextObject {
-  const base = s.fontSize * unit;
+  const size = pageSize ?? pageFieldFontSize([{ cross: crossOf(f) }], s.fontSize * unit);
+  let fontSize = fieldFontSize({ cross: crossOf(f) }, size);
+  if (f.next) fontSize = Math.min(fontSize, fieldFontSize({ cross: f.vertical ? f.next.width : f.next.height }, size));
+  const a = textForRect(f, f.vertical, s, unit, fontSize);
+  if (!f.next) return a;
+  const b = textForRect(f.next, f.vertical, s, unit, fontSize);
+  return { ...a, flow: { dx: b.x - a.x, dy: b.y - a.y, width: b.fieldWidth ?? 0, height: b.fieldHeight ?? 0 } };
+}
+
+function textForRect(
+  f: { x: number; y: number; width: number; height: number },
+  vertical: boolean,
+  s: ToolSettings['text'],
+  unit: number,
+  fontSize: number,
+): TextObject {
   const lh = s.lineHeight;
   const margin = Math.min(f.width, f.height) * 0.08;
-  const fontSize = fieldFontSize({ cross: crossOf(f) }, pageSize ?? pageFieldFontSize([{ cross: crossOf(f) }], base));
-  if (f.vertical) {
+  if (vertical) {
     const obj = { ...createText({ x: 0, y: 0 }, { ...s, vertical: true }, unit), fontSize, fieldFontSize: fontSize };
     const colW = fontSize * lh + textPadding(obj) * 2;
     // 幅の広い欄は右端（1行目の位置）から書く

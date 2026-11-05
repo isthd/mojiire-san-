@@ -60,6 +60,9 @@ export function remapObjects(objs: EditorObject[], map: (p: Point) => Point, add
           ...(o.fieldWidth !== undefined ? { fieldWidth: sz(o.fieldWidth) } : {}),
           ...(o.fieldHeight !== undefined ? { fieldHeight: sz(o.fieldHeight) } : {}),
           ...(o.fieldFontSize !== undefined ? { fieldFontSize: sz(o.fieldFontSize) } : {}),
+          ...(o.flow
+            ? { flow: { dx: sz(o.flow.dx), dy: sz(o.flow.dy), width: sz(o.flow.width), height: sz(o.flow.height) } }
+            : {}),
         } as EditorObject;
       case 'math':
         return { ...base, type: 'math', fontSize: sz(o.fontSize), width: sz(o.width), height: sz(o.height) } as EditorObject;

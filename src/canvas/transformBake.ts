@@ -52,6 +52,17 @@ export function bakeTransform(
           // 回答欄に置いた未入力の枠は、枠の大きさも一緒に変える（そのままだと元の大きさに戻って見える）
           ...(obj.fieldWidth && obj.fieldHeight ? { fieldWidth: obj.fieldWidth * sx, fieldHeight: obj.fieldHeight * sy } : {}),
           ...(obj.fieldFontSize ? { fieldFontSize: obj.fieldFontSize * s } : {}),
+          // 改行された回答欄の続きの欄も、位置・大きさを一緒に変える
+          ...(obj.flow
+            ? {
+                flow: {
+                  dx: obj.flow.dx * sx,
+                  dy: obj.flow.dy * sy,
+                  width: obj.flow.width * sx,
+                  height: obj.flow.height * sy,
+                },
+              }
+            : {}),
         },
         node: { ...base, scaleX: 1, scaleY: 1 },
       };
