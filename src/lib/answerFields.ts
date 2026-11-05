@@ -492,7 +492,11 @@ function detectUpright(img: GrayImage, ink: Uint8Array): AnswerField[] {
   linkNeighbors(cells, (x0, y0, x1, y1) => rectSum(wallSum, w, x0, y0, x1, y1), maxThick * 2 + 6);
   // 解答用紙（細い見出しのマス＋その右・下の広い回答のマス、が並ぶ表）か。
   // 解答用紙では、回答のマスは文字が書かれていても回答欄とする
-  const answerCells = new Set(cells.filter(isAnswerCell));
+  const answerCells = new Map<Cell, 'x' | 'y'>();
+  for (const c of cells) {
+    const dir = answerDirection(c);
+    if (dir) answerCells.set(c, dir);
+  }
   const sheet = answerCells.size >= 4;
   for (const c of cells) {
     const { bw, bh } = c;
@@ -508,13 +512,17 @@ function detectUpright(img: GrayImage, ink: Uint8Array): AnswerField[] {
     // 見出しのマス（右や下に、より広いマスや複数のマスが続く）は回答欄にしない
     if (hasInk && isHeaderCell(c)) continue;
     const answer = sheet && answerCells.has(c);
-    const along = answer ? (c.right.length ? 'y' : c.left.length ? 'x' : bh > bw ? 'y' : 'x') : vertical ? 'y' : 'x';
+    const along = (answer ? answerCells.get(c) : undefined) ?? (vertical ? 'y' : 'x');
     // 欄の終わりに印刷された単位（J・℃・エネルギー など）は除く
-    const end = trailingLabel(inkIn, ix0, iy0, ix1, iy1, along);
+    // 単位は枠線のすぐ近くに印刷されていることがあるので、終わりの側は余白を小さくして探す
+    const end =
+      along === 'x'
+        ? trailingLabel(inkIn, ix0, iy0, c.x1 - 1, iy1, along)
+        : trailingLabel(inkIn, ix0, iy0, ix1, c.y1 - 1, along);
     let fw = bw;
     let fh = bh;
-    if (end !== null && along === 'x') (ix1 = ix0 + end), (fw = ix1 - c.x0);
-    if (end !== null && along === 'y') (iy1 = iy0 + end), (fh = iy1 - c.y0);
+    if (end !== null && along === 'x') (ix1 = Math.min(ix1, ix0 + end)), (fw = ix0 + end - c.x0);
+    if (end !== null && along === 'y') (iy1 = Math.min(iy1, iy0 + end)), (fh = iy0 + end - c.y0);
     const area = (ix1 - ix0) * (iy1 - iy0);
     const total = inkIn(ix0, iy0, ix1, iy1);
     const isVertical = answer ? along === 'y' : vertical;
@@ -668,12 +676,13 @@ function linkNeighbors(
   }
 }
 
-/** 解答用紙の回答のマス：左（縦書きなら上）に細い見出しのマスがあり、その先にはマスが続かない広いマス */
-function isAnswerCell(c: Cell): boolean {
+/** 解答用紙の回答のマス：左（縦書きなら上）に細い見出しのマスがあり、その先にはマスが続かない広いマス。
+ *  横書きの回答のマスなら 'x'、縦書きなら 'y' を返す */
+function answerDirection(c: Cell): 'x' | 'y' | null {
   const widest = (cs: Cell[], k: 'bw' | 'bh') => Math.max(...cs.map((d) => d[k]));
-  if (!c.right.length && c.left.length && c.bw >= c.bh * 1.2 && c.bw >= widest(c.left, 'bw') * 1.8) return true;
-  if (!c.down.length && c.up.length && c.bh >= c.bw * 1.2 && c.bh >= widest(c.up, 'bh') * 1.8) return true;
-  return false;
+  if (!c.right.length && c.left.length && c.bw >= c.bh * 1.2 && c.bw >= widest(c.left, 'bw') * 1.8) return 'x';
+  if (!c.down.length && c.up.length && c.bh >= c.bw * 1.2 && c.bh >= widest(c.up, 'bh') * 1.8) return 'y';
+  return null;
 }
 
 /** 見出しのマス：右（または下）に、自分より十分広いマスか、複数のマスが続く（「1」「(1)」「①」「記号」など） */
@@ -721,7 +730,8 @@ function trailingLabel(
   let r1 = cross - 1;
   while (r0 < cross && !row(r0)) r0++;
   while (r1 > r0 && !row(r1)) r1--;
-  if (r1 - r0 + 1 < cross * 0.25) return null;
+  // 高さいっぱいの縦の筋は、枠線のにじみ
+  if (r1 - r0 + 1 < cross * 0.25 || r1 - r0 + 1 > cross * 0.9) return null;
   // かたまりの手前は、すき間の分だけ余白をとる
   const end = first - Math.max(2, Math.round(cross * 0.1));
   return end >= cross ? end : null;
