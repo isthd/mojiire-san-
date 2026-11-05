@@ -319,4 +319,20 @@ describe('detectAnswerFields（解答用紙）', () => {
     for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++) fill(img, 130 + c * 200, 118 + r * 60, 80, 24);
     expect(detectAnswerFields(img)).toEqual([]);
   });
+
+  it('縦書きの解答用紙（上に見出し・下に縦長の回答のマス）の回答のマスを縦向きで検出する', () => {
+    const img = blank(1000, 800);
+    const cols = 6;
+    box(img, 200, 100, 70 * cols, 560);
+    fill(img, 200, 180, 70 * cols, 2); // 見出しの行の下の線
+    for (let i = 1; i < cols; i++) fill(img, 200 + i * 70, 100, 2, 560);
+    for (let i = 0; i < cols; i++) fill(img, 220 + i * 70, 112, 28, 56); // 「問一」など
+    const fields = detectAnswerFields(img);
+    expect(fields).toHaveLength(cols);
+    for (const f of fields) {
+      expect(f.vertical).toBe(true);
+      expect(f.y).toBeGreaterThan(180);
+      expect(f.height).toBeGreaterThan(400);
+    }
+  });
 });
