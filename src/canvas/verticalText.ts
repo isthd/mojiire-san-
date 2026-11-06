@@ -34,6 +34,11 @@ const PUNCT = new Set([...'、。，．,.']);
 // 小書きの仮名は少し右上へ
 const SMALL = new Set([...'ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ']);
 
+/** 縦書きでは半角数字を全角にして表示する（入力した文字はそのまま） */
+export function toVerticalChar(ch: string): string {
+  return ch >= '0' && ch <= '9' ? String.fromCharCode(ch.charCodeAt(0) + 0xfee0) : ch;
+}
+
 export function punctuationOffset(ch: string, fontSize: number): { dx: number; dy: number } {
   if (PUNCT.has(ch)) return { dx: fontSize * 0.5, dy: -fontSize * 0.5 };
   if (SMALL.has(ch)) return { dx: fontSize * 0.1, dy: -fontSize * 0.1 };
@@ -56,8 +61,9 @@ export function layoutVertical(input: VerticalLayoutInput): VerticalLayout {
     const cx = width - padding - colW * ci - colW / 2;
     const colH = Math.max(0, col.length * advance - fs * input.letterSpacing);
     const top = padding + (contentH - colH) * k;
-    col.forEach((ch, ri) => {
-      if (ch === ' ' || ch === '　') return;
+    col.forEach((raw, ri) => {
+      if (raw === ' ' || raw === '　') return;
+      const ch = toVerticalChar(raw);
       glyphs.push({ ch, cx, cy: top + ri * advance + fs / 2, rotate: ROTATE.has(ch) });
     });
   });

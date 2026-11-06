@@ -22,6 +22,17 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    id: 14,
+    date: '2026-11-06',
+    features: [
+      {
+        title: '縦書きの数字が全角で表示されるようになりました',
+        how: ['縦書きの文字に半角の数字（0〜9）を入力すると、全角の数字に直して縦に並べて表示します。'],
+        open: ['縦書きにした文字に数字を入力すると、そのまま全角で表示されます。'],
+      },
+    ],
+  },
+  {
     id: 13,
     date: '2026-11-05',
     features: [

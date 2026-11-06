@@ -4,6 +4,11 @@ import { layoutVertical, wrapVertical } from './verticalText';
 const base = { fontSize: 20, letterSpacing: 0, lineHeight: 1.5, padding: 0, align: 'left' as const };
 
 describe('layoutVertical', () => {
+  it('半角数字は全角で表示する', () => {
+    const l = layoutVertical({ ...base, text: '第12問' });
+    expect(l.glyphs.map((g) => g.ch)).toEqual(['第', '１', '２', '問']);
+  });
+
   it('stacks characters top to bottom in one column', () => {
     const l = layoutVertical({ ...base, text: 'あいう' });
     expect(l.width).toBe(30);
