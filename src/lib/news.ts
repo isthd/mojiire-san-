@@ -22,6 +22,12 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    id: 15,
+    date: '2026-11-08',
+    features: [],
+    fixes: ['文字数のカウントに空白（半角・全角のスペース）が含まれていたのを直しました。空白は文字数に数えません。'],
+  },
+  {
     id: 14,
     date: '2026-11-06',
     features: [

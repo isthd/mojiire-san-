@@ -9,7 +9,13 @@ describe('countChars', () => {
 
   it('日本語・英数字を1文字ずつ数える', () => {
     expect(countChars('あいう')).toBe(3);
-    expect(countChars('abc 12')).toBe(6);
+    expect(countChars('abc12')).toBe(5);
+  });
+
+  it('空白（半角・全角・タブ）は数えない', () => {
+    expect(countChars('abc 12')).toBe(5);
+    expect(countChars('あ　い\tう')).toBe(3);
+    expect(countChars('   ')).toBe(0);
   });
 
   it('改行は数えない', () => {
