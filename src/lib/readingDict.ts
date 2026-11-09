@@ -11,7 +11,7 @@ let loading: Promise<Dict> | null = null;
 export function parseReadingDict(src: string): Dict {
   const map = new Map<string, string[]>();
   let maxLen = 1;
-  for (const line of src.split('\n')) {
+  for (const line of src.split(/\r?\n/)) {
     const tab = line.indexOf('\t');
     if (tab <= 0) continue;
     const s = line.slice(0, tab);
