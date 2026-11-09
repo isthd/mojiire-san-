@@ -199,7 +199,29 @@ export interface ProjectMeta {
   thumbnail: Blob | null;
   /** 入っているフォルダ（アプリ内の整理用）。未分類は null／なし */
   folderId?: string | null;
+  // 以下はホーム画面の整理用に後から追加した項目（古いデータでは未定義）
+  /**
+   * 教科（「化学」など）。null = 「未分類」と決めたもの。
+   * 未定義 = まだ決めていない（教科名と同じ名前のフォルダに入っていれば、その教科として扱う）
+   */
+  subject?: string | null;
+  /** 状態。未設定（null／なし）なら書き込みの有無から自動で判定する */
+  status?: ProjectStatus | null;
+  /** 期限（端末の日付で "YYYY-MM-DD"） */
+  dueDate?: string | null;
+  /** 期限の種類（テスト／提出） */
+  dueType?: DueType | null;
+  /** 名前を写真（プリントの文字）から自動でつけたか。名前を変えると false */
+  autoNamed?: boolean;
+  /** 読み取ったプリントの文字（検索・教科の推定用）。読み取れなかったときは "" */
+  ocrText?: string;
+  /** 書き込みのあるページ数（保存のたびに更新。古いデータはホーム画面を開いたときに数える） */
+  writtenPages?: number;
 }
+
+/** todo = 未記入、doing = 書き込み中、done = 完了 */
+export type ProjectStatus = 'todo' | 'doing' | 'done';
+export type DueType = 'test' | 'submit';
 
 /** アプリ内でプロジェクトを整理するためのフォルダ（1階層） */
 export interface Folder {

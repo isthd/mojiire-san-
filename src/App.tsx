@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Editor } from './components/editor/Editor';
+import { ClassicHomeScreen } from './components/home/ClassicHomeScreen';
 import { HomeScreen } from './components/home/HomeScreen';
 import { NewsDialog } from './components/ui/NewsDialog';
 import { Toasts } from './components/ui/Overlays';
@@ -14,6 +15,8 @@ function parseHash(): string | null {
 export default function App() {
   const [projectId, setProjectId] = useState<string | null>(parseHash);
   const largeUI = useSettings((s) => s.app.largeUI);
+  const homeDesign = useSettings((s) => s.app.homeDesign);
+  const setApp = useSettings((s) => s.setApp);
 
   useEffect(() => {
     const onHash = () => setProjectId(parseHash());
@@ -34,7 +37,13 @@ export default function App() {
 
   return (
     <>
-      {projectId ? <Editor key={projectId} projectId={projectId} onHome={home} /> : <HomeScreen onOpen={open} />}
+      {projectId ? (
+        <Editor key={projectId} projectId={projectId} onHome={home} />
+      ) : homeDesign === 'classic' ? (
+        <ClassicHomeScreen onOpen={open} onSwitchDesign={() => setApp({ homeDesign: 'new' })} />
+      ) : (
+        <HomeScreen onOpen={open} onSwitchDesign={() => setApp({ homeDesign: 'classic' })} />
+      )}
       <Toasts />
       <NewsDialog />
     </>

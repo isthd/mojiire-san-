@@ -46,8 +46,19 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2,woff,ttf}'],
+        // 文字の読み取りのファイル（約10MB）は最初のインストールでは入れず、使ったときに保存する
+        globIgnores: ['tesseract/**'],
         maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
         runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname.includes('/tesseract/'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'tesseract',
+              expiration: { maxEntries: 20 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
           {
             urlPattern: ({ url }) =>
               url.origin === 'https://fonts.googleapis.com' || url.origin === 'https://fonts.gstatic.com',

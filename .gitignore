@@ -2,6 +2,7 @@ node_modules
 dist
 dev-dist
 public/mathlive
+public/tesseract
 *.local
 tsconfig.tsbuildinfo
 dist-artifact

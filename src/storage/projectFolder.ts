@@ -20,6 +20,7 @@ import {
   safeDirName,
   uniqueName,
 } from '../lib/folderLayout';
+import { countWrittenPages, pickExtraMeta, readExtraMeta, type ExtraMeta } from '../lib/homeList';
 import { uid } from '../lib/id';
 import { createZip, readZip, type ZipEntry } from '../lib/zip';
 import type { ProjectDoc, ProjectMeta } from '../types/model';
@@ -39,6 +40,8 @@ interface FolderProjectFile {
   savedAt: number;
   images: { id: string; file: string; width: number; height: number }[];
   doc: ProjectDoc;
+  /** 教科・状態・期限など（後から追加。古いフォルダにはない） */
+  meta?: ExtraMeta;
 }
 
 const README = `このフォルダは「文字入れさん」のプロジェクトです。
@@ -85,6 +88,7 @@ export async function buildBundle(projectId: string, folderName: string | null):
     savedAt: Date.now(),
     images,
     doc,
+    meta: pickExtraMeta(meta),
   };
   files.unshift({ path: PROJECT_FILE, data: new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }) });
   if (meta.thumbnail) files.push({ path: 'thumbnail.jpg', data: meta.thumbnail });
@@ -264,6 +268,8 @@ async function importOne(
     pageCount: doc.pages.length,
     thumbnail,
     folderId,
+    ...readExtraMeta(data.meta),
+    writtenPages: countWrittenPages(doc),
   };
   const tx = db.transaction(['projects', 'documents', 'images'], 'readwrite');
   for (const img of images) await tx.objectStore('images').put({ ...img, projectId: id });
