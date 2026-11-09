@@ -249,6 +249,19 @@ export function HomeScreen({ onOpen, onSwitchDesign }: { onOpen: (id: string) =>
   const fileInput = useRef<HTMLInputElement>(null);
   const dirInput = useRef<HTMLInputElement>(null);
   const importMenuRef = useRef<HTMLDivElement>(null);
+  /** ヘッダーの高さ（教科タブをそのすぐ下に固定するため） */
+  const headerRef = useRef<HTMLElement>(null);
+  const [headerH, setHeaderH] = useState(64);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const update = () => setHeaderH(el.getBoundingClientRect().height);
+    update();
+    if (typeof ResizeObserver !== 'function') return;
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   /** マウスなど細かく指せる端末だけ、カードをドラッグしてフォルダへ移動できる（タッチの長押しはメニュー） */
   const canDrag = useMemo(() => typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches, []);
 
@@ -683,7 +696,8 @@ export function HomeScreen({ onOpen, onSwitchDesign }: { onOpen: (id: string) =>
       }}
     >
       <header
-        className="sticky top-0 z-10 border-b border-neutral-200 bg-white/95 backdrop-blur"
+        ref={headerRef}
+        className="sticky top-0 z-20 border-b border-neutral-200 bg-white/95 backdrop-blur"
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-2 gap-y-2 px-4 sm:gap-x-4 py-2.5 sm:h-16 sm:flex-nowrap sm:py-0">
@@ -847,9 +861,12 @@ export function HomeScreen({ onOpen, onSwitchDesign }: { onOpen: (id: string) =>
           )}
         </div>
 
-        {/* 教科タブと並び替え */}
+        {/* 教科タブと並び替え（スクロールしてもヘッダーの下に残る） */}
         {!!projects?.length && (
-          <div className="mt-6 flex items-center gap-3">
+          <div
+            className="sticky z-10 -mx-4 mt-4 flex items-center gap-3 px-4 py-2"
+            style={{ top: headerH, background: HOME.page }}
+          >
             <div role="group" aria-label="教科で絞り込む" className="no-scrollbar relative -my-1 flex min-w-0 flex-1 gap-2 overflow-x-auto py-1 pl-0.5">
               <SubjectTabButton
                 active={!q && tab === 'all'}
