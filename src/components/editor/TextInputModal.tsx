@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { measureText } from '../../canvas/describe';
 import { refreshCaret, registerTextArea } from '../../canvas/textEditController';
 import { addReading, countChars, countReadingChars, isKana } from '../../lib/charCount';
+import { guessReading, isReadingDictLoaded, loadReadingDict } from '../../lib/readingDict';
 import { useEditor } from '../../store/editorStore';
 import { useSettings } from '../../store/settingsStore';
 import { fontCss } from '../../types/model';
@@ -55,6 +56,11 @@ export function TextInputModal() {
       cancelAnimationFrame(raf);
     };
   }, [open, vertical, fontFamily, bold, italic]);
+  // 予測変換の読みを調べる辞書を、入力画面を開いたときに読み込んでおく
+  useEffect(() => {
+    if (open) loadReadingDict().catch(() => {});
+  }, [open]);
+
   const text = obj?.text ?? '';
   // 漢字に変換した語は読みの文字数で数える（例: 邪悪 → じゃあく で4文字）
   const charCount = countReadingChars(text, obj?.readings);
@@ -73,8 +79,39 @@ export function TextInputModal() {
     const reading = lastKana.current;
     lastKana.current = '';
     if (!committed || !reading || isKana(committed) || committed === reading) return;
-    const cur = useEditor.getState().textEdit?.obj;
-    updateTextDraft({ readings: addReading(cur?.readings, committed, reading) });
+    recordReading(committed, reading);
+  };
+
+  // 変換した語の読みを記録する。予測変換で途中まで打った読み（じゃ → 邪悪）は辞書で補う（じゃあく）
+  const recordReading = (committed: string, typed: string) => {
+    const id = useEditor.getState().textEdit?.obj.id;
+    const save = (reading: string) => {
+      const cur = useEditor.getState().textEdit?.obj;
+      if (!cur || cur.id !== id || reading === committed) return;
+      updateTextDraft({ readings: addReading(cur.readings, committed, reading) });
+    };
+    if (isReadingDictLoaded()) {
+      const r = guessReading(committed, typed) ?? typed;
+      if (r) save(r);
+      return;
+    }
+    if (typed) save(typed);
+    loadReadingDict()
+      .then(() => {
+        const r = guessReading(committed, typed);
+        if (r && r !== typed) save(r);
+      })
+      .catch(() => {});
+  };
+
+  // 変換を使わずに入った漢字（iPad で確定後に出る次の語の候補をタップしたときなど）も読みで数える
+  const onInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
+    updateTextDraft({ text: e.currentTarget.value });
+    const ne = e.nativeEvent as InputEvent;
+    if (composing.current || ne.isComposing) return;
+    if (ne.inputType !== 'insertText' && ne.inputType !== 'insertReplacementText') return;
+    const data = ne.data;
+    if (data && /\p{Script=Han}/u.test(data)) recordReading(data, '');
   };
 
   const done = () => commitTextEdit({ select: true });
@@ -187,7 +224,7 @@ export function TextInputModal() {
               // 縦書きでは iPad の本来のカーソルが小さく・ずれて出るため透明にして、VerticalCaret で描く
               caretColor: vertical ? 'transparent' : undefined,
             }}
-            onInput={(e) => updateTextDraft({ text: e.currentTarget.value })}
+            onInput={onInput}
             onCompositionStart={onCompositionStart}
             onCompositionUpdate={onCompositionUpdate}
             onCompositionEnd={onCompositionEnd}

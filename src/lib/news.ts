@@ -22,6 +22,14 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    id: 16,
+    date: '2026-11-09',
+    features: [],
+    fixes: [
+      'iPad の予測変換で、読みを最後まで打たずに変換したとき（「じゃ」→「邪悪」など）、文字数が打った途中の読みの数で数えられていたのを直しました。変換した語の読み（じゃあく）で数えます。',
+    ],
+  },
+  {
     id: 15,
     date: '2026-11-08',
     features: [],

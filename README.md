@@ -92,7 +92,8 @@
 ## 注意事項
 
 - データはブラウザごとに保存されます。ブラウザのサイトデータを削除すると消えるため、大切なプロジェクトはホーム画面の「…」→「バックアップを保存」で書き出してください。
-- 文字数を読みで数えられるのは、この入力画面で変換した語だけです。貼り付けた漢字や、読みを最後まで入力する前に予測候補から選んだ漢字は、漢字の文字数（またはそこまでの読み）で数えます。
+- 文字数を読みで数えられるのは、この入力画面で入力した語だけです。貼り付けた漢字は漢字の文字数で数えます。読みを最後まで入力する前に予測候補から選んだ漢字は、辞書で読みを調べて数えます（辞書にない語は、そこまで入力した読みで数えます）。
+- 読みの辞書には JMdict / KANJIDIC2（© Electronic Dictionary Research and Development Group、[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)）を [jmdict-simplified](https://github.com/scriptin/jmdict-simplified) 経由で変換して使用しています（`src/data/readings.txt`、作成は `scripts/build-reading-dict.mjs`）。
 - PDF は各ページを画像（長い辺 約2500px）にして読み込みます。パスワード付きの PDF は読み込めません。
 - iPad / iPhone では Canvas の上限（約1600万画素）があるため、非常に大きな画像を2〜3倍で書き出すと自動的に解像度を下げます（その旨を表示します）。
 - フォント「丸ゴシック」「教科書体」「UDゴシック」「UD明朝」「手書き風」「マーカー風」「ポップ」「筆文字」「ペン字」「丸文字」「極太ゴシック」「ドット」「デコ明朝」は Google Fonts（Zen Maru Gothic / Klee One / BIZ UDPGothic / BIZ UDPMincho / Yomogi / Yusei Magic / Mochiy Pop One / Yuji Syuku / Zen Kurenaido / Hachi Maru Pop / Dela Gothic One / DotGothic16 / Kaisei Decol）を使用します。初回のみ通信が必要で、以後はキャッシュされます。
