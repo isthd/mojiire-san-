@@ -1,7 +1,7 @@
 import { DEFAULT_TOOL_SETTINGS, useSettings } from '../../store/settingsStore';
 import { useEditor } from '../../store/editorStore';
 import { toast } from '../../store/toastStore';
-import { Button, Modal, Toggle } from '../ui/primitives';
+import { Button, Modal, Segmented, Toggle } from '../ui/primitives';
 
 export function SettingsDialog() {
   const open = useEditor((s) => s.modal === 'settings');
@@ -21,6 +21,19 @@ export function SettingsDialog() {
         </div>
         <div className="py-2">
           <Toggle label="ボタンや文字を大きく表示" checked={app.largeUI} onChange={(largeUI) => setApp({ largeUI })} />
+        </div>
+        <div className="space-y-2 py-3">
+          <div className="text-[14px]">ホーム画面のデザイン</div>
+          <Segmented<'new' | 'classic'>
+            ariaLabel="ホーム画面のデザイン"
+            value={app.homeDesign}
+            onChange={(homeDesign) => setApp({ homeDesign })}
+            options={[
+              { value: 'new', label: '新しいデザイン' },
+              { value: 'classic', label: '前のデザイン' },
+            ]}
+          />
+          <p className="text-xs text-neutral-500">ホーム画面の右上のボタンでも切り替えられます。</p>
         </div>
         <div className="space-y-2 py-3">
           <div className="text-[14px]">ツールの設定（色・サイズなど）を初期状態に戻す</div>

@@ -492,20 +492,25 @@ export function ClassicHomeScreen({ onOpen, onSwitchDesign }: { onOpen: (id: str
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4">
           <img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" className="h-9 w-9" />
           <div className="min-w-0">
-            <h1 className="text-[19px] leading-tight font-bold">文字入れさん</h1>
+            <h1 className="text-[19px] leading-tight font-bold whitespace-nowrap max-sm:sr-only">文字入れさん</h1>
             <p className="hidden text-xs text-neutral-500 sm:block">プリントに文字・数式・手書き・図形を書き込む学習用エディター</p>
           </div>
           <div className="flex-1" />
-          <Button variant="ghost" className="h-11 px-3" onClick={onSwitchDesign} title="新しいデザインに切り替える">
-            <LayoutGrid size={18} aria-hidden />
-            <span className="max-sm:hidden">新しいデザイン</span>
-            <span className="sm:hidden">新デザイン</span>
-          </Button>
+          <button
+            type="button"
+            onClick={onSwitchDesign}
+            aria-label="新しいデザインに切り替える"
+            title="新しいデザインに切り替える"
+            className="tap flex h-11 shrink-0 items-center gap-1.5 rounded-xl px-2.5 text-[14px] font-medium whitespace-nowrap text-[#0a5fcc] hover:bg-[#0a5fcc]/10"
+          >
+            <LayoutGrid size={18} className="max-sm:hidden" aria-hidden />
+            新デザイン
+          </button>
           <IconButton label="お知らせ" onClick={openAllNews} className="h-11 w-11">
             <Megaphone size={21} />
           </IconButton>
           <div ref={importMenuRef} className="relative">
-            <Button className="h-11 max-sm:px-3" onClick={() => setImportMenu(!importMenu)} aria-expanded={importMenu}>
+            <Button className="h-11 whitespace-nowrap max-sm:px-3" onClick={() => setImportMenu(!importMenu)} aria-expanded={importMenu}>
               <FileUp size={18} />
               <span>読み込む</span>
             </Button>

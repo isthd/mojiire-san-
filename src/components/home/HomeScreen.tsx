@@ -686,10 +686,10 @@ export function HomeScreen({ onOpen, onSwitchDesign }: { onOpen: (id: string) =>
         className="sticky top-0 z-10 border-b border-neutral-200 bg-white/95 backdrop-blur"
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 sm:h-16 sm:flex-nowrap sm:py-0">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-2 gap-y-2 px-4 sm:gap-x-4 py-2.5 sm:h-16 sm:flex-nowrap sm:py-0">
           <div className="flex shrink-0 items-center gap-2.5">
             <img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" className="h-9 w-9" />
-            <h1 className="text-[19px] leading-tight font-bold">文字入れさん</h1>
+            <h1 className="text-[16px] leading-tight font-bold whitespace-nowrap sm:text-[19px]">文字入れさん</h1>
           </div>
           <label className="relative order-last w-full sm:order-none sm:mx-auto sm:max-w-xl sm:flex-1">
             <Search size={18} className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2" style={{ color: HOME.muted }} aria-hidden />
@@ -704,8 +704,19 @@ export function HomeScreen({ onOpen, onSwitchDesign }: { onOpen: (id: string) =>
           </label>
           <button
             type="button"
+            onClick={onSwitchDesign}
+            aria-label="前のデザインに切り替える"
+            title="前のデザインに切り替える"
+            className="tap ml-auto flex h-11 shrink-0 items-center gap-1.5 rounded-xl px-2 text-[14px] font-medium whitespace-nowrap hover:bg-black/[0.05] sm:ml-0 sm:px-2.5"
+            style={{ color: HOME.link }}
+          >
+            <LayoutList size={18} className="max-sm:hidden" aria-hidden />
+            旧デザイン
+          </button>
+          <button
+            type="button"
             onClick={openAllNews}
-            className="tap ml-auto flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-neutral-300 bg-white px-3.5 text-[14px] font-medium hover:bg-neutral-50 sm:ml-0"
+            className="tap flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-neutral-300 bg-white px-2.5 text-[14px] font-medium whitespace-nowrap hover:bg-neutral-50 sm:px-3.5"
             style={{ color: HOME.text }}
           >
             <Bell size={18} aria-hidden />
