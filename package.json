@@ -4,16 +4,18 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "postinstall": "node scripts/copy-mathlive-assets.mjs",
+    "postinstall": "node scripts/copy-mathlive-assets.mjs && node scripts/copy-tesseract-assets.mjs",
     "dev": "vite",
-    "build": "node scripts/copy-mathlive-assets.mjs && tsc -b && vite build",
-    "build:artifact": "tsc -b && node scripts/build-artifact.mjs",
+    "build": "node scripts/copy-mathlive-assets.mjs && node scripts/copy-tesseract-assets.mjs && tsc -b && vite build",
+    "build:artifact": "node scripts/copy-tesseract-assets.mjs && tsc -b && node scripts/build-artifact.mjs",
     "preview": "vite preview",
     "deploy": "node scripts/deploy.mjs",
     "test": "vitest run",
     "typecheck": "tsc -b"
   },
   "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@tesseract.js-data/jpn": "^1.0.0",
     "idb": "^8.0.4",
     "jspdf": "^4.2.1",
     "konva": "^10.9.0",
@@ -24,6 +26,7 @@
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-konva": "^19.3.2",
+    "tesseract.js": "^7.0.0",
     "zustand": "^5.0.15"
   },
   "devDependencies": {

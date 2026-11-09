@@ -48,6 +48,8 @@ export interface AppSettings {
   angleSnap: boolean;
   /** UIを大きく表示 */
   largeUI: boolean;
+  /** ホーム画面のデザイン（new = 教科・期限で整理する新しいデザイン、classic = 以前のデザイン） */
+  homeDesign: 'new' | 'classic';
 }
 
 export const DEFAULT_TOOL_SETTINGS: ToolSettings = {
@@ -87,7 +89,7 @@ export const useSettings = create<SettingsState>()(
   persist(
     (set) => ({
       tools: DEFAULT_TOOL_SETTINGS,
-      app: { penOnly: false, angleSnap: true, largeUI: false },
+      app: { penOnly: false, angleSnap: true, largeUI: false, homeDesign: 'new' },
       setTool: (key, patch) => set((s) => ({ tools: { ...s.tools, [key]: { ...s.tools[key], ...patch } } })),
       setApp: (patch) => set((s) => ({ app: { ...s.app, ...patch } })),
     }),

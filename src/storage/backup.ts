@@ -1,5 +1,6 @@
 // プロジェクトのバックアップ（画像を含む単一 JSON ファイル）の書き出し・読み込み。
 import { renderThumbnail } from '../export/renderPage';
+import { countWrittenPages, pickExtraMeta, readExtraMeta, type ExtraMeta } from '../lib/homeList';
 import { uid } from '../lib/id';
 import type { ProjectDoc, ProjectMeta } from '../types/model';
 import { getDB } from './db';
@@ -23,6 +24,8 @@ interface BackupFile {
   exportedAt: number;
   doc: ProjectDoc;
   images: BackupImage[];
+  /** 教科・状態・期限など（後から追加。古いファイルにはない） */
+  meta?: ExtraMeta;
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -52,6 +55,7 @@ export async function exportBackup(projectId: string): Promise<File> {
     exportedAt: Date.now(),
     doc,
     images,
+    meta: pickExtraMeta(meta),
   };
   const name = meta.name.replace(/[\\/:*?"<>|]/g, '_') || 'project';
   return new File([JSON.stringify(file)], `${name}.mojiire.json`, { type: 'application/json' });
@@ -90,7 +94,14 @@ export async function importBackup(file: File): Promise<ProjectMeta> {
       /* サムネイルは開いたときにも作成される */
     }
   }
-  const updated = { ...meta, pageCount: doc.pages.length, createdAt: data.createdAt || meta.createdAt, thumbnail };
+  const updated: ProjectMeta = {
+    ...meta,
+    ...readExtraMeta(data.meta),
+    pageCount: doc.pages.length,
+    writtenPages: countWrittenPages(doc),
+    createdAt: data.createdAt || meta.createdAt,
+    thumbnail,
+  };
   await db.put('projects', updated);
   return updated;
 }

@@ -1,31 +1,51 @@
-// ホーム画面：プロジェクト一覧と管理（新規作成・開く・名前変更・複製・削除・バックアップ）
-// フォルダで整理（移動・ドラッグ・おまかせ整理・検索・並び替え）と、フォルダとしての保存・読み込み
+// ホーム画面：プリントの読み込み（撮影・写真/PDF・白紙）、続きから、教科タブ、日付ごとの一覧。
+// 教科・状態・期限での整理と、既存のフォルダ（移動・ドラッグ・おまかせ整理）、フォルダとしての保存・読み込み、バックアップ
 import {
-  Check,
+  Bell,
+  CalendarDays,
+  Camera,
+  CheckCheck,
   CheckSquare,
+  ChevronDown,
   Copy,
   Download,
-  Ellipsis,
+  File as FileIcon,
   FileUp,
   Folder as FolderIcon,
   FolderInput,
   FolderOpen,
   FolderOutput,
   FolderPlus,
+  Image as ImageIcon,
   ImagePlus,
   Inbox,
-  Megaphone,
+  LayoutList,
   Pencil,
   Plus,
+  RotateCcw,
   Search,
   Sparkles,
+  Tags,
   Trash2,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { downloadFile } from '../../export/exporters';
 import type { Suggestion } from '../../lib/folderLayout';
-import { whenClosed } from '../../storage/autosave';
+import {
+  continueList,
+  groupByDate,
+  matchKey,
+  normalizeForSearch,
+  searchKey,
+  sortProjects,
+  statusOf,
+  subjectOf,
+  type HomeSort,
+} from '../../lib/homeList';
+import { HOME } from '../../lib/homeTheme';
+import { subjectColor, subjectOrder, UNCLASSIFIED } from '../../lib/subjects';
+import { updateThumbnail, whenClosed } from '../../storage/autosave';
 import { exportBackup } from '../../storage/backup';
 import {
   createFolder,
@@ -38,35 +58,45 @@ import {
 import { canPickDirectory, pickDirectory } from '../../storage/fsAccess';
 import { ACCEPT_ATTR, importImageFiles, pickImageFiles } from '../../storage/imageImport';
 import { fromDirectory, fromDrop, fromFileList, supportsDirectoryInput } from '../../storage/inputFiles';
+import { canReadImages, readPageLines, readPrint, summarize } from '../../storage/printReader';
 import { importFiles, type InputFile, type SaveTarget } from '../../storage/projectFolder';
 import {
+  backfillWrittenPages,
   createProject,
   deleteProject,
   duplicateProject,
   listProjects,
+  loadDocument,
   saveDocument,
   updateProjectMeta,
 } from '../../storage/projectRepo';
 import { toast } from '../../store/toastStore';
-import { openAllNews } from '../ui/NewsDialog';
 import type { Folder, ProjectMeta } from '../../types/model';
-import { Button, ConfirmDialog, cx, IconButton, MenuPopover, PromptDialog } from '../ui/primitives';
+import { openAllNews } from '../ui/NewsDialog';
+import { ConfirmDialog, cx, MenuPopover, PromptDialog } from '../ui/primitives';
+import { DetailsDialog, type DetailsPatch } from './DetailsDialog';
+import { HomeButton, ProgressBar, SubjectBadge, Thumbnail } from './HomeParts';
 import { MoveDialog } from './MoveDialog';
-import { OrganizeDialog } from './OrganizeDialog';
+import { OrganizeDialog, type OrganizeMode } from './OrganizeDialog';
+import { DRAG_TYPE, ProjectCard } from './ProjectCard';
 import { SaveToFolderDialog } from './SaveToFolderDialog';
 
-const fmt = new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-const collator = new Intl.Collator('ja', { numeric: true, sensitivity: 'base' });
-
-/** 表示中のフォルダ：すべて／未分類／フォルダの ID */
+/** 表示中のフォルダ：すべて／フォルダなし／フォルダの ID */
 type View = 'all' | 'none' | string;
-type Sort = 'updated' | 'created' | 'name';
+/** 教科タブ：すべて／未分類／教科名 */
+type SubjectTab = 'all' | 'none' | string;
 
-const DRAG_TYPE = 'application/x-mojiire-project';
+const SORTS: { value: HomeSort; label: string }[] = [
+  { value: 'due', label: '期限が近い順' },
+  { value: 'updated', label: '更新が新しい順' },
+  { value: 'created', label: '作成が新しい順' },
+  { value: 'name', label: '名前順' },
+];
 
-function loadPref<T extends string>(key: string, fallback: T): T {
+function loadPref<T extends string>(key: string, fallback: T, valid?: readonly string[]): T {
   try {
-    return (localStorage.getItem(key) as T | null) ?? fallback;
+    const v = localStorage.getItem(key) as T | null;
+    return v !== null && (!valid || valid.includes(v)) ? v : fallback;
   } catch {
     return fallback;
   }
@@ -89,30 +119,9 @@ function today(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** 一覧用の短い日時（今年なら年を省く） */
-function shortDate(t: number): string {
-  const d = new Date(t);
-  const hm = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
-  const md = `${d.getMonth() + 1}/${d.getDate()}`;
-  return d.getFullYear() === new Date().getFullYear() ? `${md} ${hm}` : `${d.getFullYear()}/${md}`;
-}
-
-function Thumbnail({ blob, small }: { blob: Blob | null; small?: boolean }) {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (!blob) return;
-    const u = URL.createObjectURL(blob);
-    setUrl(u);
-    return () => URL.revokeObjectURL(u);
-  }, [blob]);
-  if (!blob || !url) {
-    return (
-      <div className="flex h-full w-full items-center justify-center text-neutral-300">
-        <ImagePlus size={small ? 18 : 30} strokeWidth={1.5} />
-      </div>
-    );
-  }
-  return <img src={url} alt="" className="h-full w-full object-contain" draggable={false} />;
+/** カメラで撮った写真など、意味のないファイル名か */
+function isGenericFileName(name: string): boolean {
+  return !name || /^(image|photo|img|scan|写真)[\s_\-]*\d*$/i.test(name);
 }
 
 /** フォルダの切り替えボタン（プロジェクトをドラッグして落とすと移動） */
@@ -157,31 +166,71 @@ function FolderChip({
         onDropProject(id);
       }}
       className={cx(
-        'tap flex h-10 max-w-[220px] shrink-0 items-center gap-1.5 rounded-lg px-3 text-[14px] transition',
-        active
-          ? 'bg-white font-semibold text-neutral-900 shadow-[0_1px_2px_rgb(0_0_0/0.08)] ring-1 ring-black/[0.07]'
-          : 'text-neutral-600 hover:bg-black/[0.05]',
-        dropTarget && onDropProject && !active && 'ring-2 ring-[#0a84ff]/40',
-        over && 'bg-[#0a84ff]/10 ring-2 ring-[#0a84ff]',
+        'tap flex h-11 max-w-[220px] shrink-0 items-center gap-1.5 rounded-lg px-3 text-[14px] transition',
+        active ? 'bg-white font-semibold shadow-[0_1px_2px_rgb(0_0_0/0.08)] ring-1 ring-black/[0.1]' : 'hover:bg-black/[0.05]',
+        dropTarget && onDropProject && !active && 'ring-2 ring-[#0a5fcc]/40',
+        over && 'bg-[#0a5fcc]/10 ring-2 ring-[#0a5fcc]',
       )}
+      style={{ color: HOME.text }}
     >
-      <Icon size={16} className={cx('shrink-0', active ? 'text-[#0a84ff]' : 'text-neutral-400')} />
+      <Icon size={16} className="shrink-0" style={{ color: active ? HOME.primary : HOME.muted }} aria-hidden />
       <span className="truncate">{label}</span>
-      <span className="shrink-0 text-[12px] text-neutral-400 tabular-nums">{count}</span>
+      <span className="shrink-0 text-[12px] tabular-nums" style={{ color: HOME.muted }}>
+        {count}
+      </span>
     </button>
   );
 }
 
-export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
+/** 教科タブ（色の丸と教科名・件数。選択中は黒地） */
+function SubjectTabButton({
+  active,
+  label,
+  count,
+  dot,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  count: number;
+  dot?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cx(
+        'tap flex h-11 shrink-0 items-center gap-2 rounded-full px-4 text-[14px] font-medium transition',
+        active ? '' : 'bg-white ring-1 ring-black/[0.1] hover:bg-neutral-50',
+      )}
+      style={active ? { background: HOME.tabActiveBg, color: HOME.tabActiveText } : { color: HOME.text }}
+    >
+      {dot && <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-white/60" style={{ background: dot }} />}
+      <span>{label}</span>
+      <span className="tabular-nums" style={{ color: active ? '#e5e5ea' : HOME.muted }}>
+        {count}
+        <span className="sr-only">件</span>
+      </span>
+    </button>
+  );
+}
+
+export function HomeScreen({ onOpen, onSwitchDesign }: { onOpen: (id: string) => void; onSwitchDesign: () => void }) {
   const [projects, setProjects] = useState<ProjectMeta[] | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [view, setViewState] = useState<View>(() => loadPref<View>('mojiire.home.view', 'all'));
-  const [sort, setSortState] = useState<Sort>(() => loadPref<Sort>('mojiire.home.sort', 'updated'));
+  const [tab, setTabState] = useState<SubjectTab>(() => loadPref<SubjectTab>('mojiire.home.subject', 'all'));
+  const [sort, setSortState] = useState<HomeSort>(() =>
+    loadPref<HomeSort>('mojiire.home.sort', 'due', SORTS.map((s) => s.value)),
+  );
   const [query, setQuery] = useState('');
   const [menuId, setMenuId] = useState<string | null>(null);
   const menuAnchor = useRef<HTMLDivElement>(null);
   const [renameTarget, setRenameTarget] = useState<ProjectMeta | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProjectMeta | null>(null);
+  const [detailsTarget, setDetailsTarget] = useState<ProjectMeta | null>(null);
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -190,21 +239,28 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [moveIds, setMoveIds] = useState<string[] | null>(null);
   const [saveTarget, setSaveTarget] = useState<SaveTarget | null>(null);
-  const [organizeOpen, setOrganizeOpen] = useState(false);
+  const [organizeMode, setOrganizeMode] = useState<OrganizeMode | null>(null);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [renameFolderTarget, setRenameFolderTarget] = useState<Folder | null>(null);
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<Folder | null>(null);
   const [importMenu, setImportMenu] = useState(false);
   const imageInput = useRef<HTMLInputElement>(null);
+  const cameraInput = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const dirInput = useRef<HTMLInputElement>(null);
   const importMenuRef = useRef<HTMLDivElement>(null);
+  /** マウスなど細かく指せる端末だけ、カードをドラッグしてフォルダへ移動できる（タッチの長押しはメニュー） */
+  const canDrag = useMemo(() => typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches, []);
 
   const setView = (v: View) => {
     setViewState(v);
     savePref('mojiire.home.view', v);
   };
-  const setSort = (v: Sort) => {
+  const setTab = (v: SubjectTab) => {
+    setTabState(v);
+    savePref('mojiire.home.subject', v);
+  };
+  const setSort = (v: HomeSort) => {
     setSortState(v);
     savePref('mojiire.home.sort', v);
   };
@@ -212,6 +268,8 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
   const refresh = useCallback(async () => {
     // 編集画面から戻った直後は、保存とサムネイル作成の完了を待ってから一覧を読む
     await whenClosed();
+    // 古いプロジェクトの「書き込みのあるページ数」を数える（初回だけ）
+    await backfillWrittenPages().catch((e) => console.warn('backfill failed', e));
     const [p, f] = await Promise.all([listProjects(), listFolders()]);
     setProjects(p);
     setFolders(f);
@@ -242,13 +300,25 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
     return () => window.removeEventListener('pointerdown', close);
   }, [importMenu]);
 
+  // 一覧を読み直すたびに「今日」を取り直す（日付をまたいで開いたままでも、戻ってきたときに直る）
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const now = useMemo(() => new Date(), [projects]);
+
   const currentFolder = folders.find((f) => f.id === view) ?? null;
   /** 新しく作る・読み込むプロジェクトを入れるフォルダ */
   const targetFolderId = currentFolder?.id ?? null;
   const folderName = useMemo(() => new Map(folders.map((f) => [f.id, f.name])), [folders]);
   const folderOf = (p: ProjectMeta) => (p.folderId && folderName.has(p.folderId) ? p.folderId : null);
+  /** 教科タブで選んでいる教科（新しく作るプリントにもつける） */
+  const tabSubject = tab !== 'all' && tab !== 'none' ? tab : null;
 
-  const counts = useMemo(() => {
+  const subjects = useMemo(
+    () => new Map((projects ?? []).map((p) => [p.id, subjectOf(p, (id) => folderName.get(id))])),
+    [projects, folderName],
+  );
+  const subjectFor = (p: ProjectMeta) => subjects.get(p.id) ?? null;
+
+  const folderCounts = useMemo(() => {
     const m = new Map<string, number>();
     let none = 0;
     for (const p of projects ?? []) {
@@ -259,22 +329,68 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
     return { m, none };
   }, [projects, folderName]);
 
-  const q = query.trim().toLowerCase();
+  /** いま表示しているフォルダの中のプロジェクト */
+  const inFolder = useMemo(() => {
+    const list = projects ?? [];
+    if (view === 'none') return list.filter((p) => !(p.folderId && folderName.has(p.folderId)));
+    if (view !== 'all') return list.filter((p) => p.folderId === view);
+    return list;
+  }, [projects, view, folderName]);
+
+  const tabCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    let none = 0;
+    for (const p of inFolder) {
+      const s = subjects.get(p.id) ?? null;
+      if (s) m.set(s, (m.get(s) ?? 0) + 1);
+      else none++;
+    }
+    return { m, none };
+  }, [inFolder, subjects]);
+
+  const subjectTabs = useMemo(() => {
+    const names = new Set(tabCounts.m.keys());
+    if (tabSubject) names.add(tabSubject);
+    return [...names].sort((a, b) => subjectOrder(a) - subjectOrder(b) || a.localeCompare(b, 'ja'));
+  }, [tabCounts, tabSubject]);
+
+  const searchKeys = useMemo(() => new Map((projects ?? []).map((p) => [p.id, searchKey(p)])), [projects]);
+  const q = normalizeForSearch(query);
+  const textMatches = new Set<string>();
   const visible = useMemo(() => {
-    let list = projects ?? [];
-    // 検索中はすべてのフォルダから探す
-    if (q) list = list.filter((p) => p.name.toLowerCase().includes(q));
-    else if (view === 'none') list = list.filter((p) => !(p.folderId && folderName.has(p.folderId)));
-    else if (view !== 'all') list = list.filter((p) => p.folderId === view);
-    const sorted = [...list];
-    if (sort === 'name') sorted.sort((a, b) => collator.compare(a.name, b.name));
-    else if (sort === 'created') sorted.sort((a, b) => b.createdAt - a.createdAt);
-    return sorted;
-  }, [projects, q, view, sort, folderName]);
+    let list: ProjectMeta[];
+    // 検索中はすべてのフォルダ・教科から探す
+    if (q) list = (projects ?? []).filter((p) => matchKey(searchKeys.get(p.id)!, q));
+    else if (tab === 'none') list = inFolder.filter((p) => !subjects.get(p.id));
+    else if (tab !== 'all') list = inFolder.filter((p) => subjects.get(p.id) === tab);
+    else list = inFolder;
+    return sortProjects(list, sort);
+  }, [projects, q, searchKeys, tab, inFolder, subjects, sort]);
+  if (q) for (const p of visible) if (matchKey(searchKeys.get(p.id)!, q) === 'text') textMatches.add(p.id);
+
+  const groups = useMemo(
+    () =>
+      sort === 'name'
+        ? [{ label: null, items: visible }]
+        : groupByDate(visible, (p) => (sort === 'created' ? p.createdAt : p.updatedAt), now),
+    [visible, sort, now],
+  );
+
+  const continueItems = useMemo(() => continueList(projects ?? []), [projects]);
+  const doingCount = useMemo(() => (projects ?? []).filter((p) => statusOf(p) === 'doing').length, [projects]);
+  /** フォルダに入っていないもの（フォルダの「おまかせ整理」の対象） */
+  const unfiled = useMemo(() => (projects ?? []).filter((p) => !(p.folderId && folderName.has(p.folderId))), [projects, folderName]);
+  /** 教科が未分類のもの（表示中のフォルダの中。「おまかせで分ける」の対象） */
+  const unclassified = useMemo(() => inFolder.filter((p) => !subjects.get(p.id)), [inFolder, subjects]);
 
   const createEmpty = async () => {
-    const meta = await createProject(defaultName(), undefined, targetFolderId);
-    onOpen(meta.id);
+    try {
+      const meta = await createProject(defaultName(), undefined, targetFolderId, tabSubject ? { subject: tabSubject } : {});
+      onOpen(meta.id);
+    } catch (e) {
+      console.error(e);
+      toast('作成に失敗しました', 'error');
+    }
   };
 
   const createFromImages = async (list: FileList | File[] | null) => {
@@ -282,8 +398,9 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
     if (!files.length) return;
     setBusy('読み込み中…');
     try {
-      const name = files[0].name.replace(/\.[^.]+$/, '') || defaultName();
-      const meta = await createProject(name, undefined, targetFolderId);
+      const base = files[0].name.replace(/\.[^.]+$/, '');
+      const name = isGenericFileName(base) ? defaultName() : base;
+      const meta = await createProject(name, undefined, targetFolderId, tabSubject ? { subject: tabSubject } : {});
       const { pages, failed } = await importImageFiles(meta.id, files, (p) => setBusy(p.message));
       if (!pages.length) {
         // 1枚も読み込めなかった場合は空のプロジェクトを残さない
@@ -292,7 +409,22 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
         return;
       }
       await saveDocument(meta.id, { pages });
+      // 一覧ですぐ見えるよう、1ページ目のサムネイルを作っておく（切り抜き・補正後は編集画面で作り直される）
+      await updateThumbnail(meta.id, { pages });
       if (failed.length) toast(`読み込めなかったファイルがあります：${failed.join('、')}`, 'error');
+
+      // プリントの文字を読み取って、名前と教科をつける（読み取れなければ従来どおりの名前で未分類）
+      setBusy('プリントを読み取り中…（初回は準備に少し時間がかかります）');
+      const reading = await readPrint(files, pages);
+      const patch: Partial<ProjectMeta> = { ocrText: reading?.text ?? '' };
+      if (reading?.title) {
+        patch.name = reading.title;
+        patch.autoNamed = true;
+      }
+      if (!tabSubject && reading?.subject) patch.subject = reading.subject;
+      await updateProjectMeta(meta.id, patch);
+      if (patch.autoNamed) toast(`「${patch.name}」と名前をつけました${patch.subject ? `（${patch.subject}）` : ''}`);
+      else if (patch.subject) toast(`教科を「${patch.subject}」にしました`);
       onOpen(meta.id);
     } catch (e) {
       console.error(e);
@@ -349,7 +481,7 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
     try {
       const folderId = 'newName' in target ? (await createFolder(target.newName)).id : target.folderId;
       await moveProjects(ids, folderId);
-      const label = folderId ? `「${folders.find((f) => f.id === folderId)?.name ?? ('newName' in target ? target.newName : '')}」` : '「未分類」';
+      const label = folderId ? `「${folders.find((f) => f.id === folderId)?.name ?? ('newName' in target ? target.newName : '')}」` : '「フォルダなし」';
       toast(`${ids.length > 1 ? `${ids.length}件を` : ''}${label}へ移動しました`);
     } catch (e) {
       console.error(e);
@@ -370,7 +502,58 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
     await refresh();
   };
 
-  const latest = projects?.[0];
+  /** 「おまかせで分ける」：推定した教科を設定する */
+  const applySubjects = async (groups: Suggestion[]) => {
+    try {
+      let n = 0;
+      for (const g of groups) {
+        for (const id of g.projectIds) {
+          await updateProjectMeta(id, { subject: g.name });
+          n++;
+        }
+      }
+      toast(`${n}件を${groups.length}つの教科に分けました`);
+    } catch (e) {
+      console.error(e);
+      toast('教科の設定に失敗しました', 'error');
+    }
+    await refresh();
+  };
+
+  /** まだ中身を読み取っていないプリントを読み取ってから、おまかせ整理を開く */
+  const openOrganize = async (mode: OrganizeMode) => {
+    if (mode === 'subject' && canReadImages()) {
+      // 写真の読み取りは1件数秒かかるので、一度に読むのは12件まで
+      const targets = unclassified.filter((p) => p.ocrText === undefined).slice(0, 12);
+      try {
+        for (let i = 0; i < targets.length; i++) {
+          setBusy(`プリントを読み取り中… ${i + 1}/${targets.length}`);
+          const doc = await loadDocument(targets[i].id);
+          const lines = doc ? await readPageLines(doc.pages, 1) : null;
+          await updateProjectMeta(targets[i].id, { ocrText: lines ? summarize(lines).text : '' });
+        }
+      } catch (e) {
+        console.warn('read failed', e);
+      } finally {
+        setBusy(null);
+      }
+      if (targets.length) await refresh();
+    }
+    setOrganizeMode(mode);
+  };
+
+  const saveDetails = async (p: ProjectMeta, patch: DetailsPatch) => {
+    const update: Partial<ProjectMeta> = { status: patch.status, dueDate: patch.dueDate, dueType: patch.dueType };
+    // 教科は変えたときだけ保存する（フォルダ名から決まっているだけのものはそのままにする）
+    if (patch.subject !== subjectFor(p)) update.subject = patch.subject;
+    try {
+      await updateProjectMeta(p.id, update);
+    } catch (e) {
+      console.error(e);
+      toast('保存に失敗しました', 'error');
+    }
+    await refresh();
+  };
 
   const exitSelect = () => {
     setSelecting(false);
@@ -428,19 +611,54 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
   }, [moveIds, projects, folderName]);
 
   const canImportFolder = canPickDirectory() || supportsDirectoryInput();
-  const unfiled = useMemo(() => (projects ?? []).filter((p) => !(p.folderId && folderName.has(p.folderId))), [projects, folderName]);
+
+  const menuItems = (p: ProjectMeta) => {
+    const done = statusOf(p) === 'done';
+    return [
+      { label: '開く', icon: FolderOpen, action: () => onOpen(p.id) },
+      { label: '名前を変更', icon: Pencil, action: () => setRenameTarget(p) },
+      { label: '期限・教科を設定', icon: Tags, action: () => setDetailsTarget(p) },
+      {
+        label: done ? '完了を取り消す' : '完了にする',
+        icon: done ? RotateCcw : CheckCheck,
+        action: async () => {
+          await updateProjectMeta(p.id, { status: done ? null : 'done' });
+          await refresh();
+        },
+      },
+      {
+        label: '複製',
+        icon: Copy,
+        action: async () => {
+          await duplicateProject(p.id, `${p.name} のコピー`);
+          await refresh();
+        },
+      },
+      { label: 'フォルダへ移動', icon: FolderInput, action: () => setMoveIds([p.id]) },
+      { label: 'フォルダとして保存', icon: FolderOutput, action: () => setSaveTarget({ projectIds: [p.id], label: p.name }) },
+      { label: 'バックアップを保存', icon: Download, action: () => doBackup(p) },
+      { label: '削除', icon: Trash2, action: () => setDeleteTarget(p), danger: true },
+    ];
+  };
 
   const emptyMessage = q
-    ? `「${query.trim()}」に一致するプロジェクトはありません。`
-    : view === 'all'
-      ? 'まだプロジェクトがありません。画像をここにドラッグ＆ドロップしても始められます。'
-      : view === 'none'
-        ? '未分類のプロジェクトはありません。'
-        : 'このフォルダは空です。ここで新規作成するか、プロジェクトの「…」→「フォルダへ移動」で入れられます。';
+    ? `「${query.trim()}」に一致するプリントはありません。`
+    : !projects?.length
+      ? 'まだプリントがありません。上の「撮影」「写真・PDF」から読み込むか、画像をここにドラッグ＆ドロップしてください。'
+      : tab === 'none'
+        ? '未分類のプリントはありません。'
+        : tab !== 'all'
+          ? `「${tab}」のプリントはありません。`
+          : view === 'none'
+            ? 'フォルダに入っていないプリントはありません。'
+            : 'このフォルダは空です。ここで読み込むか、プリントの「…」→「フォルダへ移動」で入れられます。';
+
+  const primaryButtonBg = `rgb(255 255 255 / ${HOME.primaryButtonAlpha})`;
 
   return (
     <div
-      className="min-h-dvh bg-[#f2f2f5]"
+      className="min-h-dvh"
+      style={{ background: HOME.page, color: HOME.text }}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes('Files')) {
           e.preventDefault();
@@ -465,340 +683,419 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
       }}
     >
       <header
-        className="sticky top-0 z-10 border-b border-neutral-200 bg-white/90 backdrop-blur"
+        className="sticky top-0 z-10 border-b border-neutral-200 bg-white/95 backdrop-blur"
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
-        <div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4">
-          <img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" className="h-9 w-9" />
-          <div className="min-w-0">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 sm:h-16 sm:flex-nowrap sm:py-0">
+          <div className="flex shrink-0 items-center gap-2.5">
+            <img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" className="h-9 w-9" />
             <h1 className="text-[19px] leading-tight font-bold">文字入れさん</h1>
-            <p className="hidden text-xs text-neutral-500 sm:block">プリントに文字・数式・手書き・図形を書き込む学習用エディター</p>
           </div>
-          <div className="flex-1" />
-          <IconButton label="お知らせ" onClick={openAllNews} className="h-11 w-11">
-            <Megaphone size={21} />
-          </IconButton>
-          <div ref={importMenuRef} className="relative">
-            <Button className="h-11 max-sm:px-3" onClick={() => setImportMenu(!importMenu)} aria-expanded={importMenu}>
-              <FileUp size={18} />
-              <span>読み込む</span>
-            </Button>
-            {importMenu && (
-              <div className="absolute top-12 right-0 z-30 w-72 overflow-hidden rounded-xl border border-neutral-200 bg-white py-1 shadow-xl">
-                {canImportFolder && (
-                  <button
-                    type="button"
-                    className="tap flex w-full items-start gap-3 px-4 py-2.5 text-left hover:bg-neutral-100"
-                    onClick={() => void importFolder()}
-                  >
-                    <FolderOpen size={19} className="mt-0.5 shrink-0 text-[#0a84ff]" />
-                    <span>
-                      <span className="block text-[15px]">フォルダを選ぶ</span>
-                      <span className="block text-[12px] text-neutral-500">OneDrive・iCloud Drive などに保存したフォルダ</span>
-                    </span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="tap flex w-full items-start gap-3 px-4 py-2.5 text-left hover:bg-neutral-100"
-                  onClick={() => {
-                    setImportMenu(false);
-                    fileInput.current?.click();
-                  }}
-                >
-                  <FileUp size={19} className="mt-0.5 shrink-0 text-[#0a84ff]" />
-                  <span>
-                    <span className="block text-[15px]">ファイルを選ぶ</span>
-                    <span className="block text-[12px] text-neutral-500">フォルダの ZIP・バックアップ（.json）</span>
-                  </span>
-                </button>
-              </div>
-            )}
-          </div>
+          <label className="relative order-last w-full sm:order-none sm:mx-auto sm:max-w-xl sm:flex-1">
+            <Search size={18} className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2" style={{ color: HOME.muted }} aria-hidden />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="名前・プリントの中身で探す（例：助動詞）"
+              aria-label="名前・プリントの中身で探す"
+              className="h-11 w-full rounded-xl border border-transparent bg-[#eef0f3] pr-3 pl-10 text-[16px] outline-none placeholder:text-[#5c6066] focus:border-[#0a5fcc] focus:bg-white focus:ring-2 focus:ring-[#0a5fcc]/30"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={openAllNews}
+            className="tap ml-auto flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-neutral-300 bg-white px-3.5 text-[14px] font-medium hover:bg-neutral-50 sm:ml-0"
+            style={{ color: HOME.text }}
+          >
+            <Bell size={18} aria-hidden />
+            お知らせ
+          </button>
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-6" style={{ paddingBottom: `calc(${selecting ? 88 : 24}px + env(safe-area-inset-bottom))` }}>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => imageInput.current?.click()}
-            className="tap flex min-h-[76px] items-center gap-3.5 rounded-xl bg-[#0a84ff] px-5 py-3.5 text-left text-white transition-colors hover:bg-[#0077ed] active:bg-[#006adf]"
-          >
-            <ImagePlus size={24} className="shrink-0" />
-            <span className="min-w-0">
-              <span className="block text-[16px] font-semibold">画像から新規作成</span>
-              <span className="block truncate text-[12.5px] text-white/80">
-                {currentFolder ? `「${currentFolder.name}」に作成（複数可）` : 'プリントや問題集の写真・PDFを選ぶ（複数可）'}
-              </span>
-            </span>
-          </button>
-          {latest ? (
+      <main className="mx-auto max-w-6xl px-4 py-5 sm:py-7" style={{ paddingBottom: `calc(${selecting ? 88 : 24}px + env(safe-area-inset-bottom))` }}>
+        <div className={cx('grid gap-4', continueItems.length > 0 && 'lg:grid-cols-[340px_minmax(0,1fr)]')}>
+          {/* 作成の入口（撮影・写真/PDF・白紙） */}
+          <section aria-label="プリントを読み込む" className="rounded-2xl p-4 text-white sm:p-5" style={{ background: HOME.primary }}>
             <button
               type="button"
-              onClick={() => onOpen(latest.id)}
-              className="tap flex min-h-[76px] items-center gap-3.5 rounded-xl bg-white px-4 py-2.5 text-left ring-1 ring-black/[0.07] transition hover:ring-[#0a84ff]/60 active:bg-neutral-50"
+              onClick={() => imageInput.current?.click()}
+              className="tap flex min-h-11 w-full items-center gap-3.5 rounded-xl text-left"
             >
-              <span className="h-14 w-[42px] shrink-0 overflow-hidden rounded-[4px] bg-white shadow-[0_1px_3px_rgb(0_0_0/0.12)] ring-1 ring-black/[0.06]">
-                <Thumbnail blob={latest.thumbnail} small />
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl" style={{ background: primaryButtonBg }}>
+                <Plus size={26} aria-hidden />
               </span>
               <span className="min-w-0">
-                <span className="block text-[12px] font-medium text-[#0a84ff]">続きから編集</span>
-                <span className="block truncate text-[15px] font-semibold">{latest.name}</span>
-                <span className="block text-[12px] text-neutral-500">{shortDate(latest.updatedAt)} 更新</span>
+                <span className="block text-[18px] font-bold">プリントを読み込む</span>
+                <span className="block truncate text-[13px]" style={{ color: `rgb(255 255 255 / ${HOME.primarySubAlpha})` }}>
+                  {currentFolder ? `「${currentFolder.name}」フォルダに入れます` : '名前と教科は自動でつけます'}
+                </span>
               </span>
             </button>
-          ) : (
-            <button
-              type="button"
-              onClick={createEmpty}
-              className="tap flex min-h-[76px] items-center gap-3.5 rounded-xl bg-white px-5 py-3.5 text-left ring-1 ring-black/[0.07] transition hover:ring-[#0a84ff]/60 active:bg-neutral-50"
-            >
-              <Plus size={24} className="shrink-0 text-neutral-500" />
-              <span className="text-[16px] font-semibold">空のプロジェクトを作成</span>
-            </button>
-          )}
-        </div>
-
-        <div className="mt-9 mb-3 flex items-center">
-          <h2 className="text-[17px] font-semibold">プロジェクト</h2>
-          <div className="flex-1" />
-          {selecting ? (
-            <Button variant="ghost" className="h-10" onClick={exitSelect}>
-              <X size={18} /> 完了
-            </Button>
-          ) : (
-            <>
-              {!!projects?.length && (
-                <Button variant="ghost" className="h-10" onClick={() => setSelecting(true)}>
-                  <CheckSquare size={18} /> 選択
-                </Button>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              {[
+                { label: '撮影', icon: Camera, onClick: () => cameraInput.current?.click() },
+                { label: '写真・PDF', icon: ImageIcon, onClick: () => imageInput.current?.click() },
+                { label: '白紙', icon: FileIcon, onClick: () => void createEmpty() },
+              ].map((b) => (
+                <button
+                  key={b.label}
+                  type="button"
+                  onClick={b.onClick}
+                  className="tap flex min-h-[64px] flex-col items-center justify-center gap-1.5 rounded-xl text-[14px] font-medium transition hover:brightness-110 active:scale-[0.98]"
+                  style={{ background: primaryButtonBg }}
+                >
+                  <b.icon size={20} aria-hidden />
+                  {b.label}
+                </button>
+              ))}
+            </div>
+            <div ref={importMenuRef} className="relative mt-2">
+              <button
+                type="button"
+                onClick={() => setImportMenu(!importMenu)}
+                aria-expanded={importMenu}
+                className="tap -ml-1 flex min-h-11 items-center gap-1.5 rounded-lg px-1 text-[13.5px] underline-offset-2 hover:underline"
+              >
+                <FileUp size={16} aria-hidden />
+                保存したフォルダ・バックアップを開く
+              </button>
+              {importMenu && (
+                <div className="absolute top-full left-0 z-30 w-72 overflow-hidden rounded-xl border border-neutral-200 bg-white py-1 shadow-xl" style={{ color: HOME.text }}>
+                  {canImportFolder && (
+                    <button
+                      type="button"
+                      className="tap flex min-h-11 w-full items-start gap-3 px-4 py-2.5 text-left hover:bg-neutral-100"
+                      onClick={() => void importFolder()}
+                    >
+                      <FolderOpen size={19} className="mt-0.5 shrink-0" style={{ color: HOME.primary }} aria-hidden />
+                      <span>
+                        <span className="block text-[15px]">フォルダを選ぶ</span>
+                        <span className="block text-[12px]" style={{ color: HOME.muted }}>
+                          OneDrive・iCloud Drive などに保存したフォルダ
+                        </span>
+                      </span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="tap flex min-h-11 w-full items-start gap-3 px-4 py-2.5 text-left hover:bg-neutral-100"
+                    onClick={() => {
+                      setImportMenu(false);
+                      fileInput.current?.click();
+                    }}
+                  >
+                    <FileUp size={19} className="mt-0.5 shrink-0" style={{ color: HOME.primary }} aria-hidden />
+                    <span>
+                      <span className="block text-[15px]">ファイルを選ぶ</span>
+                      <span className="block text-[12px]" style={{ color: HOME.muted }}>
+                        フォルダの ZIP・バックアップ（.json）
+                      </span>
+                    </span>
+                  </button>
+                </div>
               )}
-              <Button variant="ghost" className="h-10" onClick={createEmpty}>
-                <Plus size={18} /> 新規作成
-              </Button>
-            </>
+            </div>
+          </section>
+
+          {/* 続きから（書き込み中のものを最大3件） */}
+          {continueItems.length > 0 && (
+            <section aria-labelledby="continue-heading" className="min-w-0 rounded-2xl bg-white p-4 ring-1 ring-black/[0.06] sm:p-5">
+              <div className="mb-3 flex items-baseline gap-2">
+                <h2 id="continue-heading" className="text-[16px] font-bold">
+                  続きから
+                </h2>
+                <span className="ml-auto text-[13px]" style={{ color: HOME.muted }}>
+                  書きかけ {doingCount}件
+                </span>
+              </div>
+              <ul className="grid gap-3 sm:grid-cols-3">
+                {continueItems.map((p) => (
+                  <li key={p.id} className="min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => onOpen(p.id)}
+                      className="tap flex w-full items-center gap-3 rounded-xl p-3 text-left ring-1 ring-black/[0.1] transition hover:ring-[#0a5fcc]/60"
+                    >
+                      <span className="block h-[68px] w-[50px] shrink-0 overflow-hidden rounded-[3px] bg-white shadow-[0_1px_3px_rgb(0_0_0/0.15)] ring-1 ring-black/[0.06]">
+                        <Thumbnail blob={p.thumbnail} small fit="cover" />
+                      </span>
+                      <span className="block min-w-0 flex-1">
+                        <SubjectBadge subject={subjectFor(p)} />
+                        <span className="mt-1 line-clamp-2 text-[14px] leading-snug font-semibold break-words">{p.name}</span>
+                        <span className="mt-1.5 block">
+                          <ProgressBar done={p.writtenPages ?? 0} total={p.pageCount} />
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
         </div>
 
+        {/* 教科タブと並び替え */}
         {!!projects?.length && (
-          <div className="mb-3 flex gap-2">
-            <label className="relative min-w-0 flex-1">
-              <Search size={17} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-neutral-400" />
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="名前で探す"
-                aria-label="名前で探す"
-                className="h-10 w-full rounded-xl border border-neutral-200 bg-white pr-3 pl-9 text-[16px] outline-none focus:border-[#0a84ff] focus:ring-2 focus:ring-[#0a84ff]/30"
+          <div className="mt-6 flex items-center gap-3">
+            <div role="group" aria-label="教科で絞り込む" className="no-scrollbar relative -my-1 flex min-w-0 flex-1 gap-2 overflow-x-auto py-1 pl-0.5">
+              <SubjectTabButton
+                active={!q && tab === 'all'}
+                label="すべて"
+                count={inFolder.length}
+                onClick={() => {
+                  setQuery('');
+                  setTab('all');
+                }}
               />
+              {subjectTabs.map((s) => (
+                <SubjectTabButton
+                  key={s}
+                  active={!q && tab === s}
+                  label={s}
+                  count={tabCounts.m.get(s) ?? 0}
+                  dot={subjectColor(s).fg}
+                  onClick={() => {
+                    setQuery('');
+                    setTab(s);
+                  }}
+                />
+              ))}
+              {(tabCounts.none > 0 || tab === 'none') && (
+                <SubjectTabButton
+                  active={!q && tab === 'none'}
+                  label={UNCLASSIFIED}
+                  count={tabCounts.none}
+                  dot={subjectColor(null).fg}
+                  onClick={() => {
+                    setQuery('');
+                    setTab('none');
+                  }}
+                />
+              )}
+            </div>
+            <label className="relative shrink-0">
+              <CalendarDays size={16} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2" style={{ color: HOME.text }} aria-hidden />
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value as HomeSort)}
+                aria-label="並び順"
+                className="h-11 appearance-none rounded-xl bg-white pr-8 pl-9 text-[14px] ring-1 ring-black/[0.1] outline-none focus:ring-2 focus:ring-[#0a5fcc]"
+                style={{ color: HOME.text }}
+              >
+                {SORTS.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={16} className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2" style={{ color: HOME.text }} aria-hidden />
             </label>
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as Sort)}
-              aria-label="並び順"
-              className="h-10 shrink-0 rounded-xl border border-neutral-200 bg-white px-2 text-[14px] outline-none focus:border-[#0a84ff]"
-            >
-              <option value="updated">更新が新しい順</option>
-              <option value="created">作成が新しい順</option>
-              <option value="name">名前順</option>
-            </select>
           </div>
         )}
 
+        {/* 未分類のプリントがあるときのお知らせ */}
+        {!q && unclassified.length > 0 && (
+          <div
+            role="region"
+            aria-label="未分類のプリント"
+            className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-4 py-2"
+            style={{ background: HOME.bannerBg, color: HOME.bannerText }}
+          >
+            <Sparkles size={18} className="shrink-0" style={{ color: HOME.primary }} aria-hidden />
+            <p className="min-w-0 flex-1 py-1.5 text-[14px]">
+              未分類のプリントが{unclassified.length}件あります。中身を読み取って教科ごとに分けますか？
+            </p>
+            <button
+              type="button"
+              onClick={() => void openOrganize('subject')}
+              className="tap min-h-11 shrink-0 rounded-xl px-4 text-[14px] font-semibold text-white transition hover:brightness-110"
+              style={{ background: HOME.primary }}
+            >
+              おまかせで分ける
+            </button>
+          </div>
+        )}
+
+        {/* フォルダ（既存の整理機能）と選択 */}
         {!!projects?.length && (
-          <div className="mb-5 flex flex-wrap items-center gap-1">
-            <FolderChip
-              active={!q && view === 'all'}
-              label="すべて"
-              count={projects.length}
-              icon={FolderOpen}
-              dropTarget={false}
-              onClick={() => {
-                setQuery('');
-                setView('all');
-              }}
-            />
-            <FolderChip
-              active={!q && view === 'none'}
-              label="未分類"
-              count={counts.none}
-              icon={Inbox}
-              dropTarget={!!dragId}
-              onClick={() => {
-                setQuery('');
-                setView('none');
-              }}
-              onDropProject={(id) => void move([id], { folderId: null })}
-            />
-            {folders.map((f) => (
-              <FolderChip
-                key={f.id}
-                active={!q && view === f.id}
-                label={f.name}
-                count={counts.m.get(f.id) ?? 0}
-                icon={FolderIcon}
-                dropTarget={!!dragId}
-                onClick={() => {
-                  setQuery('');
-                  setView(f.id);
-                }}
-                onDropProject={(id) => void move([id], { folderId: f.id })}
-              />
-            ))}
-            <Button variant="ghost" className="h-10 px-3" onClick={() => setNewFolderOpen(true)}>
-              <FolderPlus size={18} /> フォルダ
-            </Button>
-            {unfiled.length >= 2 && (
-              <Button variant="ghost" className="h-10 px-3" onClick={() => setOrganizeOpen(true)}>
-                <Sparkles size={18} /> おまかせ整理
-              </Button>
+          <div className="mt-4 flex flex-wrap items-center gap-1">
+            {folders.length > 0 && (
+              <>
+                <span className="mr-1 text-[13px] font-semibold" style={{ color: HOME.muted }}>
+                  フォルダ
+                </span>
+                <FolderChip
+                  active={!q && view === 'all'}
+                  label="すべて"
+                  count={projects.length}
+                  icon={FolderOpen}
+                  dropTarget={false}
+                  onClick={() => {
+                    setQuery('');
+                    setView('all');
+                  }}
+                />
+                <FolderChip
+                  active={!q && view === 'none'}
+                  label="フォルダなし"
+                  count={folderCounts.none}
+                  icon={Inbox}
+                  dropTarget={!!dragId}
+                  onClick={() => {
+                    setQuery('');
+                    setView('none');
+                  }}
+                  onDropProject={(id) => void move([id], { folderId: null })}
+                />
+                {folders.map((f) => (
+                  <FolderChip
+                    key={f.id}
+                    active={!q && view === f.id}
+                    label={f.name}
+                    count={folderCounts.m.get(f.id) ?? 0}
+                    icon={FolderIcon}
+                    dropTarget={!!dragId}
+                    onClick={() => {
+                      setQuery('');
+                      setView(f.id);
+                    }}
+                    onDropProject={(id) => void move([id], { folderId: f.id })}
+                  />
+                ))}
+              </>
+            )}
+            <HomeButton onClick={() => setNewFolderOpen(true)}>
+              <FolderPlus size={18} aria-hidden /> {folders.length ? 'フォルダ' : 'フォルダを作る'}
+            </HomeButton>
+            {folders.length > 0 && unfiled.length >= 2 && (
+              <HomeButton onClick={() => void openOrganize('name')}>
+                <Sparkles size={18} aria-hidden /> おまかせ整理
+              </HomeButton>
+            )}
+            <div className="flex-1" />
+            {selecting ? (
+              <HomeButton onClick={exitSelect}>
+                <X size={18} aria-hidden /> 完了
+              </HomeButton>
+            ) : (
+              <HomeButton onClick={() => setSelecting(true)}>
+                <CheckSquare size={18} aria-hidden /> 選択
+              </HomeButton>
             )}
           </div>
         )}
 
-        {q && <p className="mb-3 text-[13px] text-neutral-500">すべてのフォルダから探しています（{visible.length}件）</p>}
+        {q && (
+          <p className="mt-3 text-[13px]" style={{ color: HOME.muted }}>
+            すべてのフォルダ・教科から探しています（{visible.length}件）
+          </p>
+        )}
 
         {!q && currentFolder && (
-          <div className="mb-5 flex flex-wrap items-center gap-1 rounded-xl bg-white px-3 py-2 ring-1 ring-black/[0.07]">
-            <FolderIcon size={19} className="shrink-0 text-[#0a84ff]" />
+          <div className="mt-3 flex flex-wrap items-center gap-1 rounded-xl bg-white px-3 py-1 ring-1 ring-black/[0.07]">
+            <FolderIcon size={19} className="shrink-0" style={{ color: HOME.primary }} aria-hidden />
             <span className="mr-auto min-w-0 truncate px-1 text-[15px] font-semibold">{currentFolder.name}</span>
-            <Button variant="ghost" className="h-9 px-2.5 text-[14px]" onClick={() => setRenameFolderTarget(currentFolder)}>
-              <Pencil size={16} /> 名前を変更
-            </Button>
-            <Button variant="ghost" className="h-9 px-2.5 text-[14px]" onClick={() => saveFolder(currentFolder)}>
-              <FolderOutput size={16} /> フォルダごと保存
-            </Button>
-            <Button variant="ghost" className="h-9 px-2.5 text-[14px] text-[#ff3b30] hover:bg-[#ff3b30]/10" onClick={() => setDeleteFolderTarget(currentFolder)}>
-              <Trash2 size={16} /> 削除
-            </Button>
+            <HomeButton onClick={() => setRenameFolderTarget(currentFolder)}>
+              <Pencil size={16} aria-hidden /> 名前を変更
+            </HomeButton>
+            <HomeButton onClick={() => saveFolder(currentFolder)}>
+              <FolderOutput size={16} aria-hidden /> フォルダごと保存
+            </HomeButton>
+            <HomeButton tone="danger" onClick={() => setDeleteFolderTarget(currentFolder)}>
+              <Trash2 size={16} aria-hidden /> 削除
+            </HomeButton>
           </div>
         )}
 
         {projects && visible.length === 0 && (
-          <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-neutral-300 px-6 py-12 text-center text-[14px] leading-relaxed text-neutral-500">
-            {!q && view === 'all' && <ImagePlus size={28} strokeWidth={1.5} className="text-neutral-400" />}
+          <div
+            className="mt-6 flex flex-col items-center gap-3 rounded-xl border border-dashed border-neutral-300 px-6 py-12 text-center text-[14px] leading-relaxed"
+            style={{ color: HOME.muted }}
+          >
+            {!projects.length && <ImagePlus size={28} strokeWidth={1.5} aria-hidden />}
             {emptyMessage}
           </div>
         )}
 
-        <ul className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-x-5 gap-y-6">
-          {visible.map((p) => {
-            const isSel = selected.has(p.id);
-            const fid = folderOf(p);
-            const showFolder = (view === 'all' || !!q) && fid;
-            return (
-            <li
-              key={p.id}
-              className={cx('group relative', dragId === p.id && 'opacity-50')}
-              draggable={!selecting}
-              onDragStart={(e) => {
-                e.dataTransfer.setData(DRAG_TYPE, p.id);
-                e.dataTransfer.effectAllowed = 'move';
-                setDragId(p.id);
-              }}
-              onDragEnd={() => setDragId(null)}
-            >
-              <button
-                type="button"
-                aria-pressed={selecting ? isSel : undefined}
-                onClick={() => (selecting ? toggleSelected(p.id) : onOpen(p.id))}
-                title={`${p.name}\n更新 ${fmt.format(p.updatedAt)}\n作成 ${fmt.format(p.createdAt)}`}
-                className="block w-full text-left"
-              >
-                <div
-                  className={cx(
-                    'relative aspect-[3/4] overflow-hidden rounded-md bg-white shadow-[0_1px_3px_rgb(0_0_0/0.1)] ring-1 ring-black/[0.06] transition',
-                    'group-hover:shadow-[0_4px_14px_rgb(0_0_0/0.12)] group-hover:ring-[#0a84ff]/50',
-                    selecting && isSel && 'ring-[3px] ring-[#0a84ff] group-hover:ring-[#0a84ff]',
-                  )}
-                >
-                  <Thumbnail blob={p.thumbnail} />
-                  {showFolder && (
-                    <span className="absolute top-1.5 right-1.5 flex max-w-[85%] items-center gap-1 rounded-md bg-white/95 px-1.5 py-0.5 text-[11px] text-neutral-600 shadow-[0_1px_2px_rgb(0_0_0/0.12)]">
-                      <FolderIcon size={12} className="shrink-0 text-neutral-400" />
-                      <span className="truncate">{folderName.get(fid)}</span>
-                    </span>
-                  )}
-                </div>
-                <div className={cx('pt-2', !selecting && 'pr-9')}>
-                  <div className="truncate text-[14px] font-semibold">{p.name}</div>
-                  <div className="mt-0.5 truncate text-[12px] text-neutral-500 tabular-nums">
-                    {sort === 'created' ? `作成 ${shortDate(p.createdAt)}` : shortDate(p.updatedAt)}・{p.pageCount}ページ
-                  </div>
-                </div>
-              </button>
-              {selecting && (
-                <span
-                  aria-hidden
-                  className={cx(
-                    'pointer-events-none absolute top-2.5 left-2.5 flex h-7 w-7 items-center justify-center rounded-full border-2 shadow',
-                    isSel ? 'border-[#0a84ff] bg-[#0a84ff] text-white' : 'border-white bg-white/80 text-transparent',
-                  )}
-                >
-                  <Check size={16} strokeWidth={3} />
-                </span>
-              )}
-              {!selecting && (
-              <div data-menu className="absolute right-0 -bottom-0.5" ref={menuId === p.id ? menuAnchor : undefined}>
-                <IconButton
-                  label="メニュー"
-                  className="h-9 w-9 text-neutral-500"
-                  onClick={() => setMenuId(menuId === p.id ? null : p.id)}
-                >
-                  <Ellipsis size={18} />
-                </IconButton>
-                {menuId === p.id && (
-                  <MenuPopover anchor={menuAnchor} width={224}>
-                    {[
-                      { label: '開く', icon: FolderOpen, action: () => onOpen(p.id) },
-                      { label: '名前を変更', icon: Pencil, action: () => setRenameTarget(p) },
-                      {
-                        label: '複製',
-                        icon: Copy,
-                        action: async () => {
-                          await duplicateProject(p.id, `${p.name} のコピー`);
-                          await refresh();
-                        },
-                      },
-                      { label: 'フォルダへ移動', icon: FolderInput, action: () => setMoveIds([p.id]) },
-                      {
-                        label: 'フォルダとして保存',
-                        icon: FolderOutput,
-                        action: () => setSaveTarget({ projectIds: [p.id], label: p.name }),
-                      },
-                      { label: 'バックアップを保存', icon: Download, action: () => doBackup(p) },
-                      { label: '削除', icon: Trash2, action: () => setDeleteTarget(p), danger: true },
-                    ].map((item) => (
-                      <button
-                        key={item.label}
-                        type="button"
-                        className={cx(
-                          'tap flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[14px] hover:bg-neutral-100',
-                          item.danger && 'text-[#ff3b30]',
-                        )}
-                        onClick={() => {
-                          setMenuId(null);
-                          void item.action();
-                        }}
-                      >
-                        <item.icon size={17} /> {item.label}
-                      </button>
-                    ))}
-                  </MenuPopover>
-                )}
-              </div>
-              )}
-            </li>
-            );
-          })}
-        </ul>
-        <p className="mt-10 text-center text-xs leading-relaxed text-neutral-400">
+        {groups.map((g) => (
+          <section key={g.label ?? 'all'} aria-labelledby={g.label ? `group-${g.label}` : undefined} className="mt-6">
+            {g.label && (
+              <h2 id={`group-${g.label}`} className="mb-3 text-[16px] font-bold">
+                {g.label}
+              </h2>
+            )}
+            <ul className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
+              {g.items.map((p) => {
+                const fid = folderOf(p);
+                const menuOpen = menuId === p.id;
+                return (
+                  <ProjectCard
+                    key={p.id}
+                    p={p}
+                    subject={subjectFor(p)}
+                    status={statusOf(p)}
+                    now={now}
+                    folderLabel={(view === 'all' || !!q) && fid ? (folderName.get(fid) ?? null) : null}
+                    matchedText={textMatches.has(p.id)}
+                    selecting={selecting}
+                    selected={selected.has(p.id)}
+                    draggable={canDrag && !selecting}
+                    dragging={dragId === p.id}
+                    menuAnchor={menuOpen ? menuAnchor : undefined}
+                    menu={
+                      menuOpen ? (
+                        <MenuPopover anchor={menuAnchor} width={236}>
+                          <div role="menu" aria-label={`「${p.name}」のメニュー`}>
+                            {menuItems(p).map((item) => (
+                              <button
+                                key={item.label}
+                                type="button"
+                                role="menuitem"
+                                className="tap flex min-h-11 w-full items-center gap-2.5 px-3.5 py-2 text-left text-[14px] hover:bg-neutral-100"
+                                style={{ color: item.danger ? HOME.dueSoon : HOME.text }}
+                                onClick={() => {
+                                  setMenuId(null);
+                                  void item.action();
+                                }}
+                              >
+                                <item.icon size={17} aria-hidden /> {item.label}
+                              </button>
+                            ))}
+                          </div>
+                        </MenuPopover>
+                      ) : null
+                    }
+                    onOpen={() => onOpen(p.id)}
+                    onToggleSelect={() => toggleSelected(p.id)}
+                    onMenu={(open) => setMenuId(open ? p.id : null)}
+                    onRenameAuto={() => setRenameTarget(p)}
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData(DRAG_TYPE, p.id);
+                      e.dataTransfer.effectAllowed = 'move';
+                      setDragId(p.id);
+                    }}
+                    onDragEnd={() => setDragId(null)}
+                  />
+                );
+              })}
+            </ul>
+          </section>
+        ))}
+
+        <p className="mt-10 text-center text-xs leading-relaxed" style={{ color: HOME.muted }}>
           データはこの端末のブラウザ内に保存されます。ログイン不要・オフラインでも利用できます。
+          <br />
+          プリントの文字の読み取りも端末の中で行い、外部には送りません。
           <br />
           「…」→「フォルダとして保存」で、iCloud Drive や OneDrive にも保存できます。
         </p>
+        <div className="mt-2 flex justify-center">
+          <HomeButton onClick={onSwitchDesign}>
+            <LayoutList size={18} aria-hidden /> 前のデザインに切り替える
+          </HomeButton>
+        </div>
       </main>
 
       {selecting && (
@@ -807,9 +1104,7 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
           <div className="mx-auto flex h-16 max-w-6xl items-center gap-2 px-4">
-            <Button
-              variant="ghost"
-              className="h-11 px-2.5"
+            <HomeButton
               onClick={() =>
                 setSelected((prev) => {
                   const next = new Set(prev);
@@ -822,18 +1117,26 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
               }
             >
               {allSelected ? '選択を解除' : 'すべて選択'}
-            </Button>
-            <span className="text-[14px] whitespace-nowrap text-neutral-500">{selected.size}件</span>
+            </HomeButton>
+            <span className="text-[14px] whitespace-nowrap" style={{ color: HOME.muted }}>
+              {selected.size}件
+            </span>
             <div className="flex-1" />
-            <Button className="h-11 px-3" disabled={!selected.size} onClick={() => setMoveIds([...selected])} title="フォルダへ移動">
-              <FolderInput size={18} /> <span className="max-sm:hidden">移動</span>
-            </Button>
-            <Button className="h-11 px-3" disabled={!selected.size} onClick={saveSelected} title="フォルダとして保存">
-              <FolderOutput size={18} /> <span className="max-sm:hidden">保存</span>
-            </Button>
-            <Button variant="danger" className="h-11 px-3" disabled={!selected.size} onClick={() => setBulkDeleteOpen(true)} title="削除">
-              <Trash2 size={18} /> <span className="max-sm:hidden">削除</span>
-            </Button>
+            <HomeButton tone="plain" className="bg-neutral-200/80" disabled={!selected.size} onClick={() => setMoveIds([...selected])} aria-label="フォルダへ移動" title="フォルダへ移動">
+              <FolderInput size={18} aria-hidden /> <span className="max-sm:hidden">移動</span>
+            </HomeButton>
+            <HomeButton tone="plain" className="bg-neutral-200/80" disabled={!selected.size} onClick={saveSelected} aria-label="フォルダとして保存" title="フォルダとして保存">
+              <FolderOutput size={18} aria-hidden /> <span className="max-sm:hidden">保存</span>
+            </HomeButton>
+            <HomeButton
+              tone="dangerSolid"
+              disabled={!selected.size}
+              onClick={() => setBulkDeleteOpen(true)}
+              aria-label="削除"
+              title="削除"
+            >
+              <Trash2 size={18} aria-hidden /> <span className="max-sm:hidden">削除</span>
+            </HomeButton>
           </div>
         </div>
       )}
@@ -843,6 +1146,17 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
         type="file"
         accept={ACCEPT_ATTR}
         multiple
+        className="hidden"
+        onChange={(e) => {
+          void createFromImages(e.target.files);
+          e.target.value = '';
+        }}
+      />
+      <input
+        ref={cameraInput}
+        type="file"
+        accept="image/*"
+        capture="environment"
         className="hidden"
         onChange={(e) => {
           void createFromImages(e.target.files);
@@ -881,9 +1195,15 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
         onClose={() => setRenameTarget(null)}
         onSubmit={async (name) => {
           if (!renameTarget) return;
-          await updateProjectMeta(renameTarget.id, { name, updatedAt: Date.now() });
+          await updateProjectMeta(renameTarget.id, { name, autoNamed: false, updatedAt: Date.now() });
           await refresh();
         }}
+      />
+      <DetailsDialog
+        project={detailsTarget}
+        subject={detailsTarget ? subjectFor(detailsTarget) : null}
+        onSave={(patch) => detailsTarget && void saveDetails(detailsTarget, patch)}
+        onClose={() => setDetailsTarget(null)}
       />
       <PromptDialog
         open={newFolderOpen}
@@ -917,7 +1237,7 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
           <>
             フォルダ「{deleteFolderTarget?.name}」を削除しますか？
             <br />
-            中のプロジェクト（{deleteFolderTarget ? (counts.m.get(deleteFolderTarget.id) ?? 0) : 0}件）は削除されず、「未分類」に移ります。
+            中のプリント（{deleteFolderTarget ? (folderCounts.m.get(deleteFolderTarget.id) ?? 0) : 0}件）は削除されず、「フォルダなし」に移ります。
           </>
         }
         confirmLabel="フォルダを削除"
@@ -933,7 +1253,7 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
       />
       <ConfirmDialog
         open={!!deleteTarget}
-        title="プロジェクトを削除"
+        title="プリントを削除"
         message={
           <>
             「{deleteTarget?.name}」を削除しますか？
@@ -953,10 +1273,10 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
       />
       <ConfirmDialog
         open={bulkDeleteOpen}
-        title="プロジェクトを削除"
+        title="プリントを削除"
         message={
           <>
-            選択した{selected.size}件のプロジェクトを削除しますか？
+            選択した{selected.size}件のプリントを削除しますか？
             <br />
             画像と書き込みがすべて削除され、元に戻せません。
           </>
@@ -975,11 +1295,14 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
         onClose={() => setMoveIds(null)}
       />
       <OrganizeDialog
-        open={organizeOpen}
+        open={!!organizeMode}
+        initialMode={organizeMode ?? 'name'}
         projects={unfiled}
+        subjectProjects={unclassified}
         folders={folders}
         onApply={(g) => void organize(g)}
-        onClose={() => setOrganizeOpen(false)}
+        onApplySubjects={(g) => void applySubjects(g)}
+        onClose={() => setOrganizeMode(null)}
       />
       <SaveToFolderDialog
         target={saveTarget}
@@ -989,8 +1312,8 @@ export function HomeScreen({ onOpen }: { onOpen: (id: string) => void }) {
         }}
       />
       {dragOver && (
-        <div className="pointer-events-none fixed inset-3 z-30 flex items-center justify-center rounded-3xl border-4 border-dashed border-[#0a84ff] bg-[#0a84ff]/10 text-lg font-semibold text-[#0a84ff]">
-          ドロップして読み込む（画像・フォルダ・ZIP）
+        <div className="pointer-events-none fixed inset-3 z-30 flex items-center justify-center rounded-3xl border-4 border-dashed border-[#0a5fcc] bg-[#0a5fcc]/10 text-lg font-semibold text-[#0a5fcc]">
+          ドロップして読み込む（画像・PDF・フォルダ・ZIP）
         </div>
       )}
       {busy && (

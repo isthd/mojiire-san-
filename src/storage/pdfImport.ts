@@ -1,5 +1,6 @@
 // PDF の各ページを画像（JPEG）にする。pdf.js は大きいので、PDF を読み込むときだけ読み込む。
 // 古めの iPad の Safari でも動くよう legacy 版を使う。
+import { groupIntoLines, type TextBox, type TextLine } from '../lib/autoTitle';
 
 /** 長い辺のピクセル数の目安（A4 で約 210dpi。文字が読めて、ファイルが大きくなりすぎない） */
 const TARGET_LONG_SIDE = 2480;
@@ -89,6 +90,37 @@ export async function renderPdfPages(
       await onPage({ blob, width, height }, i - 1, total);
     }
     return total;
+  } finally {
+    void doc.destroy();
+  }
+}
+
+/**
+ * PDF に埋め込まれた文字を、ページごとに行にまとめて返す（先頭 maxPages ページまで）。
+ * スキャンした PDF など文字が入っていないページは空の配列になる。画像にするより軽く、端末の中だけで動く。
+ */
+export async function extractPdfText(file: File, maxPages = 20): Promise<TextLine[][]> {
+  const pdfjs = await loadPdfJs();
+  const data = new Uint8Array(await file.arrayBuffer());
+  const doc = await pdfjs.getDocument({ data }).promise;
+  try {
+    const out: TextLine[][] = [];
+    for (let i = 1; i <= Math.min(doc.numPages, maxPages); i++) {
+      const page = await doc.getPage(i);
+      const { height } = page.getViewport({ scale: 1 });
+      const content = await page.getTextContent();
+      const boxes: TextBox[] = [];
+      for (const item of content.items) {
+        if (!('str' in item) || !item.str.trim()) continue;
+        const [, , c, d, e, f] = item.transform as number[];
+        const size = Math.hypot(c, d) || item.height || 1;
+        // PDF の座標は下から上なので、上からの位置にする
+        boxes.push({ text: item.str, x: e, y: height - f - size, width: item.width, height: size });
+      }
+      out.push(groupIntoLines(boxes));
+      page.cleanup();
+    }
+    return out;
   } finally {
     void doc.destroy();
   }

@@ -1,4 +1,5 @@
 // プロジェクトの CRUD。
+import { countWrittenPages } from '../lib/homeList';
 import { uid } from '../lib/id';
 import type { Page, ProjectDoc, ProjectMeta } from '../types/model';
 import { getDB, type SavedHistory, type StoredDocument, type StoredImage } from './db';
@@ -17,6 +18,8 @@ export async function createProject(
   name: string,
   doc: ProjectDoc = { pages: [] },
   folderId: string | null = null,
+  /** 教科など、最初から設定しておく項目 */
+  extra: Partial<Omit<ProjectMeta, 'id'>> = {},
 ): Promise<ProjectMeta> {
   const db = await getDB();
   const now = Date.now();
@@ -28,6 +31,7 @@ export async function createProject(
     pageCount: doc.pages.length,
     thumbnail: null,
     folderId,
+    ...extra,
   };
   const tx = db.transaction(['projects', 'documents'], 'readwrite');
   await tx.objectStore('projects').put(meta);
@@ -54,8 +58,30 @@ export async function saveDocument(projectId: string, doc: ProjectDoc, history?:
     return;
   }
   await tx.objectStore('documents').put({ projectId, version: 1, doc, ...(history ? { history } : {}) });
-  await tx.objectStore('projects').put({ ...meta, updatedAt: Date.now(), pageCount: doc.pages.length });
+  await tx.objectStore('projects').put({
+    ...meta,
+    updatedAt: Date.now(),
+    pageCount: doc.pages.length,
+    writtenPages: countWrittenPages(doc),
+  });
   await tx.done;
+}
+
+/**
+ * 古いプロジェクト（書き込みのあるページ数を数えていないもの）を数えて保存する。
+ * 更新日時は変えない。変更があったら true。
+ */
+export async function backfillWrittenPages(): Promise<boolean> {
+  const db = await getDB();
+  const missing = (await db.getAll('projects')).filter((p) => p.writtenPages === undefined);
+  for (const p of missing) {
+    const stored = await db.get('documents', p.id);
+    const tx = db.transaction('projects', 'readwrite');
+    const cur = await tx.store.get(p.id);
+    if (cur) await tx.store.put({ ...cur, writtenPages: stored ? countWrittenPages(stored.doc) : 0 });
+    await tx.done;
+  }
+  return missing.length > 0;
 }
 
 export async function updateProjectMeta(id: string, patch: Partial<Omit<ProjectMeta, 'id'>>): Promise<void> {

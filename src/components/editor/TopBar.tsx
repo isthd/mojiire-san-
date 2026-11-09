@@ -119,7 +119,7 @@ export function TopBar({ onHome, onAddImages }: { onHome: () => void; onAddImage
         onClose={() => setRenaming(false)}
         onSubmit={(v) => {
           useEditor.getState().setProjectName(v);
-          if (projectId) void updateProjectMeta(projectId, { name: v, updatedAt: Date.now() });
+          if (projectId) void updateProjectMeta(projectId, { name: v, autoNamed: false, updatedAt: Date.now() });
         }}
       />
     </header>
