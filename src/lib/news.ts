@@ -22,6 +22,14 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    id: 18,
+    date: '2026-11-12',
+    features: [],
+    fixes: [
+      'PDFを読み込むと、ページが真っ白になることがある不具合を直しました（日本語のフォントが埋め込まれていないPDFや、コピー機でスキャンしたPDFなど）。すでに白く読み込まれたプリントは、もう一度PDFから読み込み直してください。',
+    ],
+  },
+  {
     id: 17,
     date: '2026-11-09',
     features: [

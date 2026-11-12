@@ -37,6 +37,26 @@ function loadPdfJs(): Promise<PdfJs> {
   return pdfjsPromise;
 }
 
+/** pdf.js の追加データ（public/pdfjs/。scripts/copy-pdfjs-assets.mjs でコピー）の場所 */
+function pdfAssetUrl(dir: string): string {
+  return new URL(`${import.meta.env.BASE_URL}pdfjs/${dir}/`, location.href).href;
+}
+
+/**
+ * PDF を開く。日本語のフォント（CMap）・標準フォント・スキャン画像の展開（JBIG2/JPEG2000 の wasm）・
+ * CMYK の色変換に使うデータの場所を渡す。渡さないと、文字や画像が描かれず白いページになる。
+ */
+function openPdf(pdfjs: PdfJs, data: Uint8Array) {
+  return pdfjs.getDocument({
+    data,
+    cMapUrl: pdfAssetUrl('cmaps'),
+    cMapPacked: true,
+    standardFontDataUrl: pdfAssetUrl('standard_fonts'),
+    wasmUrl: pdfAssetUrl('wasm'),
+    iccUrl: pdfAssetUrl('iccs'),
+  }).promise;
+}
+
 function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('画像に変換できませんでした'))), 'image/jpeg', 0.92),
@@ -62,7 +82,7 @@ export async function renderPdfPages(
   const data = new Uint8Array(await file.arrayBuffer());
   let doc;
   try {
-    doc = await pdfjs.getDocument({ data }).promise;
+    doc = await openPdf(pdfjs, data);
   } catch (e) {
     const name = (e as { name?: string })?.name;
     throw new Error(name === 'PasswordException' ? 'パスワード付きのPDFは読み込めません' : 'PDFを開けませんでした');
@@ -102,7 +122,7 @@ export async function renderPdfPages(
 export async function extractPdfText(file: File, maxPages = 20): Promise<TextLine[][]> {
   const pdfjs = await loadPdfJs();
   const data = new Uint8Array(await file.arrayBuffer());
-  const doc = await pdfjs.getDocument({ data }).promise;
+  const doc = await openPdf(pdfjs, data);
   try {
     const out: TextLine[][] = [];
     for (let i = 1; i <= Math.min(doc.numPages, maxPages); i++) {

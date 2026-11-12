@@ -6,3 +6,4 @@ public/tesseract
 *.local
 tsconfig.tsbuildinfo
 dist-artifact
+public/pdfjs
