@@ -47,7 +47,8 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2,woff,ttf}'],
         // 文字の読み取りのファイル（約10MB）は最初のインストールでは入れず、使ったときに保存する
-        globIgnores: ['tesseract/**'],
+        // PDF の読み込み用データ（日本語のフォント表など）も、使ったときに保存する
+        globIgnores: ['tesseract/**', 'pdfjs/**'],
         maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
         runtimeCaching: [
           {
@@ -56,6 +57,15 @@ export default defineConfig({
             options: {
               cacheName: 'tesseract',
               expiration: { maxEntries: 20 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            urlPattern: ({ url }) => url.pathname.includes('/pdfjs/'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'pdfjs',
+              expiration: { maxEntries: 400 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },

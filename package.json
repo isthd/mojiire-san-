@@ -4,10 +4,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "postinstall": "node scripts/copy-mathlive-assets.mjs && node scripts/copy-tesseract-assets.mjs",
+    "postinstall": "node scripts/copy-mathlive-assets.mjs && node scripts/copy-tesseract-assets.mjs && node scripts/copy-pdfjs-assets.mjs",
     "dev": "vite",
-    "build": "node scripts/copy-mathlive-assets.mjs && node scripts/copy-tesseract-assets.mjs && tsc -b && vite build",
-    "build:artifact": "node scripts/copy-tesseract-assets.mjs && tsc -b && node scripts/build-artifact.mjs",
+    "build": "node scripts/copy-mathlive-assets.mjs && node scripts/copy-tesseract-assets.mjs && node scripts/copy-pdfjs-assets.mjs && tsc -b && vite build",
+    "build:artifact": "node scripts/copy-tesseract-assets.mjs && node scripts/copy-pdfjs-assets.mjs && tsc -b && node scripts/build-artifact.mjs",
     "preview": "vite preview",
     "deploy": "node scripts/deploy.mjs",
     "test": "vitest run",
