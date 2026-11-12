@@ -41,7 +41,7 @@ import {
 import { canPickDirectory, pickDirectory } from '../../storage/fsAccess';
 import { ACCEPT_ATTR, importImageFiles, pickImageFiles } from '../../storage/imageImport';
 import { fromDirectory, fromDrop, fromFileList, supportsDirectoryInput } from '../../storage/inputFiles';
-import { readPrint } from '../../storage/printReader';
+import { autoSortImportedPages, readPrint } from '../../storage/printReader';
 import { importFiles, type InputFile, type SaveTarget } from '../../storage/projectFolder';
 import {
   createProject,
@@ -293,13 +293,19 @@ export function ClassicHomeScreen({ onOpen, onSwitchDesign }: { onOpen: (id: str
     try {
       const name = files[0].name.replace(/\.[^.]+$/, '') || defaultName();
       const meta = await createProject(name, undefined, targetFolderId);
-      const { pages, failed } = await importImageFiles(meta.id, files, (p) => setBusy(p.message));
-      if (!pages.length) {
+      const imported = await importImageFiles(meta.id, files, (p) => setBusy(p.message));
+      const { failed } = imported;
+      if (!imported.pages.length) {
         // 1枚も読み込めなかった場合は空のプロジェクトを残さない
         await deleteProject(meta.id);
         toast(`画像を読み込めませんでした：${failed.join('、')}（PNG・JPEG・WebP・PDF に対応）`, 'error');
         return;
       }
+      // 写真を何枚も読み込んだときは、印刷されたページ番号の順に並べる
+      const { pages, sorted } = await autoSortImportedPages(files, imported.pages, (d, t) =>
+        setBusy(d < t ? `ページ番号を読み取り中… ${d + 1}/${t}` : 'ページ番号を読み取り中…'),
+      );
+      if (sorted) toast('ページ番号の順に並べ替えました');
       await saveDocument(meta.id, { pages });
       await updateThumbnail(meta.id, { pages });
       if (failed.length) toast(`読み込めなかったファイルがあります：${failed.join('、')}`, 'error');

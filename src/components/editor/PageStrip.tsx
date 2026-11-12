@@ -1,11 +1,12 @@
 // ページ一覧（複数画像をページ単位で管理）
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ListOrdered, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { getImageUrl, loadPageImage } from '../../storage/imageCache';
 import { useEditor } from '../../store/editorStore';
 import type { Page } from '../../types/model';
 import { ConfirmDialog, cx, IconButton } from '../ui/primitives';
+import { sortProjectPagesByNumber } from './addImages';
 
 function Thumb({ page }: { page: Page }) {
   const [url, setUrl] = useState(() => getImageUrl(page.imageId));
@@ -50,6 +51,18 @@ export function PageStrip({ onAddImages }: { onAddImages: () => void }) {
           ページ {idx + 1} / {pages.length}
         </span>
         <div className="flex-1" />
+        {pages.length >= 2 && (
+          <button
+            type="button"
+            onClick={() => void sortProjectPagesByNumber()}
+            title="プリントに印刷されたページ番号を読み取って、番号の順に並べ替えます"
+            className="flex h-8 items-center gap-1 rounded-lg px-2 text-[13px] font-medium text-[#0a84ff] hover:bg-[#0a84ff]/10"
+          >
+            <ListOrdered size={16} />
+            <span className="hidden min-[380px]:inline">番号順に並べる</span>
+            <span className="min-[380px]:hidden">番号順</span>
+          </button>
+        )}
         <IconButton label="前のページ" disabled={idx <= 0} onClick={() => setCurrentPage(pages[idx - 1].id)} className="h-9 w-9">
           <ChevronLeft size={18} />
         </IconButton>
