@@ -79,6 +79,8 @@ interface EditorState {
   movePage: (id: string, delta: number) => void;
   /** ページを指定の位置（移動後の並びでの番号）へ移す */
   movePageTo: (id: string, toIndex: number) => void;
+  /** ページの並びを ids の順にする（元に戻すで戻せる） */
+  setPageOrder: (ids: string[]) => void;
   /** ページの画像を差し替える（切り抜き・傾き補正）。元に戻せる */
   replacePage: (page: Page) => void;
 
@@ -255,6 +257,16 @@ export const useEditor = create<EditorState>()((set, get) => {
       const j = i + delta;
       if (i < 0 || j < 0 || j >= pages.length) return;
       [pages[i], pages[j]] = [pages[j], pages[i]];
+      set(withHistory(s, pushHistory(s.history, { ...s.history.present, pages })));
+    },
+    setPageOrder: (ids) => {
+      const s = get();
+      const cur = s.history.present.pages;
+      const byId = new Map(cur.map((p) => [p.id, p]));
+      const pages = ids.map((id) => byId.get(id)).filter((p): p is Page => !!p);
+      // 渡されなかったページは後ろに残す
+      for (const p of cur) if (!ids.includes(p.id)) pages.push(p);
+      if (pages.every((p, i) => p === cur[i])) return;
       set(withHistory(s, pushHistory(s.history, { ...s.history.present, pages })));
     },
     movePageTo: (id, toIndex) => {
