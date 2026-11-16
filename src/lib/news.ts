@@ -22,6 +22,14 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    id: 20,
+    date: '2026-11-16',
+    features: [],
+    fixes: [
+      '文字の入力で、キーボードの予測変換（候補）が出ないことがあったのを直しました。ホーム画面に追加したアプリでも予測変換が使えます。',
+    ],
+  },
+  {
     id: 19,
     date: '2026-11-12',
     features: [
