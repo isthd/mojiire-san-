@@ -50,7 +50,14 @@ export interface AppSettings {
   largeUI: boolean;
   /** ホーム画面のデザイン（new = 教科・期限で整理する新しいデザイン、classic = 以前のデザイン） */
   homeDesign: 'new' | 'classic';
+  /**
+   * 文字の入力モード。normal = キーボードの変換そのまま、hiragana = 漢字・カタカナに変換せずひらがなだけ、
+   * auto = 打ったひらがなをアプリが自動で漢字に変換する
+   */
+  textInputMode: TextInputMode;
 }
+
+export type TextInputMode = 'normal' | 'hiragana' | 'auto';
 
 export const DEFAULT_TOOL_SETTINGS: ToolSettings = {
   text: {
@@ -89,7 +96,7 @@ export const useSettings = create<SettingsState>()(
   persist(
     (set) => ({
       tools: DEFAULT_TOOL_SETTINGS,
-      app: { penOnly: false, angleSnap: true, largeUI: false, homeDesign: 'new' },
+      app: { penOnly: false, angleSnap: true, largeUI: false, homeDesign: 'new', textInputMode: 'normal' },
       setTool: (key, patch) => set((s) => ({ tools: { ...s.tools, [key]: { ...s.tools[key], ...patch } } })),
       setApp: (patch) => set((s) => ({ app: { ...s.app, ...patch } })),
     }),
