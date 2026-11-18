@@ -51,13 +51,12 @@ export interface AppSettings {
   /** ホーム画面のデザイン（new = 教科・期限で整理する新しいデザイン、classic = 以前のデザイン） */
   homeDesign: 'new' | 'classic';
   /**
-   * 文字の入力モード。normal = キーボードの変換そのまま、hiragana = 漢字・カタカナに変換せずひらがなだけ、
-   * auto = 打ったひらがなをアプリが自動で漢字に変換する
+   * 文字の入力モード。normal = キーボードの変換そのまま、hiragana = 漢字・カタカナに変換せずひらがなだけ
    */
   textInputMode: TextInputMode;
 }
 
-export type TextInputMode = 'normal' | 'hiragana' | 'auto';
+export type TextInputMode = 'normal' | 'hiragana';
 
 export const DEFAULT_TOOL_SETTINGS: ToolSettings = {
   text: {
@@ -116,7 +115,10 @@ export const useSettings = create<SettingsState>()(
           // 新しい設定項目が増えても既定値で補完する
           (tools as Record<string, unknown>)[k] = { ...current.tools[k], ...(p.tools?.[k] ?? {}) };
         }
-        return { ...current, tools, app: { ...current.app, ...(p.app ?? {}) } };
+        const app = { ...current.app, ...(p.app ?? {}) };
+        // 以前あった「自動変換」のモードは「ふつう」にもどす
+        if (app.textInputMode !== 'hiragana') app.textInputMode = 'normal';
+        return { ...current, tools, app };
       },
     },
   ),

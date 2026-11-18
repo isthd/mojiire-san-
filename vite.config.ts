@@ -48,8 +48,7 @@ export default defineConfig({
         globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2,woff,ttf}'],
         // 文字の読み取りのファイル（約10MB）は最初のインストールでは入れず、使ったときに保存する
         // PDF の読み込み用データ（日本語のフォント表など）も、使ったときに保存する
-        // 自動変換（ひらがな → 漢字）の辞書（約2MB）も、使ったときに保存する
-        globIgnores: ['tesseract/**', 'pdfjs/**', 'kanakanji/**'],
+        globIgnores: ['tesseract/**', 'pdfjs/**'],
         maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
         runtimeCaching: [
           {
@@ -67,15 +66,6 @@ export default defineConfig({
             options: {
               cacheName: 'pdfjs',
               expiration: { maxEntries: 400 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
-            urlPattern: ({ url }) => url.pathname.includes('/kanakanji/'),
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'kanakanji',
-              expiration: { maxEntries: 10 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },
