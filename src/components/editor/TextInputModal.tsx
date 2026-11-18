@@ -1,20 +1,11 @@
 // 文字の入力画面。上部に「横書き／縦書き／数式を入力」と「完了」。
 // 入力欄は常に DOM に置いておき、タップ処理の中で同期的にフォーカスする（iPad でキーボードを出すため）。
 import { Sigma } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { measureText } from '../../canvas/describe';
 import { refreshCaret, registerTextArea } from '../../canvas/textEditController';
 import { addReading, countChars, countReadingChars, isKana } from '../../lib/charCount';
 import { toHiraganaText } from '../../lib/hiraganaOnly';
-import {
-  candidates as kkCandidates,
-  convertBest,
-  isConvertible,
-  isKanaKanjiDictLoaded,
-  loadKanaKanjiDict,
-  type KKCandidate,
-  type KKSegment,
-} from '../../lib/kanaKanji';
 import { guessReading, isReadingDictLoaded, loadReadingDict } from '../../lib/readingDict';
 import { PUNCT, romajiToKana } from '../../lib/romaji';
 import { useEditor } from '../../store/editorStore';
@@ -26,18 +17,7 @@ import { VerticalCaret } from './VerticalCaret';
 const MODES: { v: TextInputMode; label: string }[] = [
   { v: 'normal', label: 'ふつう' },
   { v: 'hiragana', label: 'ひらがな' },
-  { v: 'auto', label: '自動変換' },
 ];
-
-/** 自動変換の候補バーに出している語（start の位置に text が入っている） */
-interface ConvState {
-  start: number;
-  reading: string;
-  text: string;
-  /** まだ変換していない（打っている途中の）ひらがなか */
-  live: boolean;
-  cands: KKCandidate[] | null;
-}
 
 const isLowerRomaji = (c: string) => /^[a-z'-]$/.test(c);
 const isKanaChar = (c: string | undefined) => !!c && /[ぁ-ゖァ-ヶー]/.test(c);
@@ -55,10 +35,6 @@ export function TextInputModal() {
   const setApp = useSettings((s) => s.setApp);
   const modeRef = useRef(mode);
   modeRef.current = mode;
-  // 自動変換：英字やかなキーボードで打っている途中のひらがなの始まり（IME を使わずに打ったとき）
-  const pending = useRef<number | null>(null);
-  const [conv, setConv] = useState<ConvState | null>(null);
-  const [dictReady, setDictReady] = useState(isKanaKanjiDictLoaded());
 
   useEffect(() => {
     registerTextArea(ref.current);
@@ -98,22 +74,6 @@ export function TextInputModal() {
   useEffect(() => {
     if (open) loadReadingDict().catch(() => {});
   }, [open]);
-  // 自動変換の辞書は、自動変換のモードで入力画面を開いたときに読み込む
-  useEffect(() => {
-    if (!open || mode !== 'auto' || dictReady) return;
-    let alive = true;
-    loadKanaKanjiDict()
-      .then(() => alive && setDictReady(true))
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [open, mode, dictReady]);
-  // 閉じたら・モードを変えたら、変換の途中の状態を消す
-  useEffect(() => {
-    pending.current = null;
-    setConv(null);
-  }, [open, mode, obj?.id]);
 
   const text = obj?.text ?? '';
   // 漢字に変換した語は読みの文字数で数える（例: 邪悪 → じゃあく で4文字）
@@ -123,11 +83,6 @@ export function TextInputModal() {
   const onCompositionStart = () => {
     composing.current = true;
     lastKana.current = '';
-    if (modeRef.current === 'auto') {
-      // 打っている途中のひらがなは、そのまま確定する
-      pending.current = null;
-      setConv(null);
-    }
   };
   const onCompositionUpdate = (e: React.CompositionEvent<HTMLTextAreaElement>) => {
     if (e.data && isKana(e.data)) lastKana.current = e.data;
@@ -138,7 +93,7 @@ export function TextInputModal() {
     const reading = lastKana.current;
     lastKana.current = '';
     const m = modeRef.current;
-    if (committed && m !== 'normal') {
+    if (committed && m === 'hiragana') {
       // 確定した文字が入力欄に反映されてから処理する（ブラウザによって input と compositionend の順が違うため）
       const typed = reading;
       setTimeout(() => {
@@ -148,10 +103,9 @@ export function TextInputModal() {
         const pos = el.selectionEnd;
         const start = pos - committed.length;
         if (start < 0 || el.value.slice(start, pos) !== committed) return;
-        if (m === 'hiragana') toHiraganaRange(start, pos, committed, typed);
-        else if (isConvertible(committed)) autoConvert(start, pos);
+        toHiraganaRange(start, pos, committed, typed);
       }, 0);
-      if (m === 'hiragana') return;
+      return;
     }
     if (!committed || !reading || isKana(committed) || committed === reading) return;
     recordReading(committed, reading);
@@ -191,86 +145,6 @@ export function TextInputModal() {
     run();
   };
 
-  // 「自動変換」：start〜end のひらがなを、いちばんよい変換にする
-  const autoConvert = (start: number, end: number) => {
-    const el = ref.current;
-    if (!el) return;
-    const reading = el.value.slice(start, end);
-    if (!reading || !isConvertible(reading)) return;
-    const id = useEditor.getState().textEdit?.obj.id;
-    const run = () => {
-      const cur = ref.current;
-      if (!cur || useEditor.getState().textEdit?.obj.id !== id || cur.value.slice(start, end) !== reading) return;
-      const segs = convertBest(reading);
-      if (!segs) return;
-      const cands = kkCandidates(reading);
-      applyConversion(start, reading, reading, segs, cands);
-    };
-    if (isKanaKanjiDictLoaded()) run();
-    else
-      loadKanaKanjiDict()
-        .then(() => {
-          setDictReady(true);
-          run();
-        })
-        .catch(() => {});
-  };
-
-  // start の位置の current を segments の表記に置き換え、読みを記録して、候補バーに出す
-  const applyConversion = (
-    start: number,
-    reading: string,
-    current: string,
-    segments: KKSegment[],
-    cands: KKCandidate[] | null,
-  ) => {
-    const el = ref.current;
-    const obj0 = useEditor.getState().textEdit?.obj;
-    if (!el || !obj0 || el.value.slice(start, start + current.length) !== current) return;
-    const text = segments.map((x) => x.surface).join('');
-    let readings = obj0.readings;
-    for (const sg of segments) {
-      if (/\p{Script=Han}/u.test(sg.surface)) readings = addReading(readings, sg.surface, sg.reading);
-    }
-    replaceRange(start, start + current.length, text, readings !== obj0.readings ? { readings } : undefined);
-    pending.current = null;
-    setConv({ start, reading, text, live: false, cands });
-  };
-
-  // 候補バーで候補を選んだとき
-  const pickCandidate = (c: KKCandidate) => {
-    if (!conv) return;
-    applyConversion(conv.start, conv.reading, conv.text, c.segments, conv.cands);
-  };
-
-  // 打っている途中のひらがなの候補を出す
-  const showLive = () => {
-    const el = ref.current;
-    const st = pending.current;
-    if (!el || st === null) return setConv(null);
-    let pos = el.selectionEnd;
-    // 打っている途中の英字（"k" など）は除く
-    while (pos > st && isLowerRomaji(el.value[pos - 1])) pos--;
-    const reading = el.value.slice(st, pos);
-    if (!reading) return setConv(null);
-    if (!isConvertible(reading)) {
-      pending.current = null;
-      return setConv(null);
-    }
-    setConv({ start: st, reading, text: reading, live: true, cands: isKanaKanjiDictLoaded() ? kkCandidates(reading) : null });
-  };
-
-  // 打っている途中のひらがなを変換する（スペース・句読点・改行を打ったとき）
-  const convertPending = (end: number): boolean => {
-    const el = ref.current;
-    const st = pending.current;
-    if (!el || st === null || st >= end) return false;
-    const reading = el.value.slice(st, end);
-    if (!isConvertible(reading)) return false;
-    autoConvert(st, end);
-    return true;
-  };
-
   // ローマ字をひらがなにする。英字を打った直後に、カーソルの前の英字の並びを見る。
   // final = true のときは最後の n も「ん」にする。変換後のカーソルの位置を返す
   const convertRomaji = (final: boolean): number => {
@@ -287,7 +161,6 @@ export function TextInputModal() {
     const { kana, rest } = romajiToKana(src, final);
     const out = kana + rest;
     if (out !== src) replaceRange(st, pos, out);
-    if (kana && modeRef.current === 'auto' && pending.current === null) pending.current = st;
     return st + out.length;
   };
 
@@ -322,7 +195,7 @@ export function TextInputModal() {
     const m = modeRef.current;
     const data = ne.data;
     const isInsert = ne.inputType === 'insertText' || ne.inputType === 'insertReplacementText';
-    if (m !== 'normal') {
+    if (m === 'hiragana') {
       handleModeInput(el, ne.inputType, isInsert ? data : null);
       return;
     }
@@ -330,28 +203,20 @@ export function TextInputModal() {
     if (data && /\p{Script=Han}/u.test(data)) recordReading(data, '');
   };
 
-  // 「ひらがな」「自動変換」のときの入力（IME を使わずに入った文字）
+  // 「ひらがな」のときの入力（IME を使わずに入った文字）
   const handleModeInput = (el: HTMLTextAreaElement, inputType: string, data: string | null) => {
-    const m = modeRef.current;
     const pos = el.selectionEnd;
     if (inputType === 'insertLineBreak' || inputType === 'insertParagraph') {
       convertRomaji(true);
-      if (m === 'auto') convertPending(el.selectionEnd - 1);
       return;
     }
-    if (!data) {
-      // 削除など：打っている途中の範囲より前に戻ったら、途中の状態をやめる
-      if (pending.current !== null && pos <= pending.current) pending.current = null;
-      if (m === 'auto') showLive();
-      return;
-    }
+    if (!data) return;
     if (data.length === 1 && isLowerRomaji(data)) {
       convertRomaji(false);
-      if (m === 'auto') showLive();
       return;
     }
     if (data === ' ' || data === '　' || PUNCT[data] || /^[、。，．！？]$/.test(data)) {
-      // 区切りの記号：その前のローマ字を確定し、自動変換では途中のひらがなを変換する
+      // 区切りの記号：その前のローマ字を確定する
       const start = pos - data.length;
       el.setSelectionRange(start, start);
       const end = convertRomaji(true);
@@ -359,30 +224,10 @@ export function TextInputModal() {
       el.setSelectionRange(after, after);
       let sym = data;
       if (PUNCT[data] && isKanaChar(el.value[end - 1])) sym = PUNCT[data];
-      const isSpace = data === ' ' || data === '　';
-      if (m === 'auto' && isSpace && pending.current !== null) {
-        // スペースは変換のキーとして使い、文字は入れない
-        replaceRange(end, after, '');
-        convertPending(end);
-        return;
-      }
       if (sym !== data) replaceRange(end, after, sym);
-      if (m === 'auto') convertPending(end);
       return;
     }
-    if (m === 'hiragana') {
-      toHiraganaRange(pos - data.length, pos, data);
-      return;
-    }
-    // 自動変換：かなキーボードなどで直接入ったひらがなは、打っている途中として候補を出す
-    if (isConvertible(data)) {
-      if (pending.current === null || pending.current > pos - data.length) pending.current = pos - data.length;
-      showLive();
-      return;
-    }
-    pending.current = null;
-    setConv(null);
-    if (/\p{Script=Han}/u.test(data)) recordReading(data, '');
+    toHiraganaRange(pos - data.length, pos, data);
   };
 
   const done = () => commitTextEdit({ select: true });
@@ -511,42 +356,6 @@ export function TextInputModal() {
           />
           {vertical && <VerticalCaret textareaRef={ref} deps={[open, fontFamily, bold, italic]} />}
         </div>
-        {mode === 'auto' && (
-          <div
-            className="flex h-11 shrink-0 items-center gap-1 overflow-x-auto border-t border-neutral-100 px-2"
-            aria-label="変換の候補"
-          >
-            {!dictReady ? (
-              <span className="px-2 text-[13px] text-neutral-400">変換の辞書を読み込んでいます…</span>
-            ) : conv?.cands?.length ? (
-              conv.cands.map((c, i) => {
-                const current = c.text === conv.text && !conv.live;
-                return (
-                  <button
-                    key={c.text}
-                    type="button"
-                    onPointerDown={keepFocus}
-                    onClick={() => pickCandidate(c)}
-                    className={cx(
-                      'tap h-9 shrink-0 rounded-lg px-3 text-[16px] whitespace-nowrap',
-                      current
-                        ? 'bg-[#0a84ff] text-white'
-                        : i === 0 && conv.live
-                          ? 'bg-[#0a84ff]/10 text-[#0a84ff]'
-                          : 'text-neutral-800 hover:bg-neutral-100',
-                    )}
-                  >
-                    {c.text}
-                  </button>
-                );
-              })
-            ) : (
-              <span className="px-2 text-[13px] text-neutral-400">
-                ひらがなを打つと漢字に変換します（確定・スペース・句読点で変換）
-              </span>
-            )}
-          </div>
-        )}
         <div className="flex h-10 shrink-0 items-center gap-1 border-t border-neutral-100 pr-4 pl-2 text-[13px]">
           <div role="group" aria-label="入力のしかた" className="flex items-center gap-0.5 rounded-lg bg-neutral-100 p-0.5">
             {MODES.map((x) => (
