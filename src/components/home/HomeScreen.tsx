@@ -1,4 +1,4 @@
-// ホーム画面：プリントの読み込み（撮影・写真/PDF・白紙）、続きから、教科タブ、日付ごとの一覧。
+// ホーム画面：プリントの読み込み（撮影・写真/PDF・テンプレート）、続きから、教科タブ、日付ごとの一覧。
 // 教科・状態・期限での整理と、既存のフォルダ（移動・ドラッグ・おまかせ整理）、フォルダとしての保存・読み込み、バックアップ
 import {
   Bell,
@@ -9,7 +9,6 @@ import {
   ChevronDown,
   Copy,
   Download,
-  File as FileIcon,
   FileUp,
   Folder as FolderIcon,
   FolderInput,
@@ -80,6 +79,10 @@ import { MoveDialog } from './MoveDialog';
 import { OrganizeDialog, type OrganizeMode } from './OrganizeDialog';
 import { DRAG_TYPE, ProjectCard } from './ProjectCard';
 import { SaveToFolderDialog } from './SaveToFolderDialog';
+import { TemplateDialog } from './TemplateDialog';
+import { LetterPaper } from '../icons/LetterPaper';
+import { templateName, type TemplateOptions } from '../../lib/paperTemplates';
+import { createTemplatePage } from '../../storage/templateProject';
 
 /** 表示中のフォルダ：すべて／フォルダなし／フォルダの ID */
 type View = 'all' | 'none' | string;
@@ -396,13 +399,20 @@ export function HomeScreen({ onOpen, onSwitchDesign }: { onOpen: (id: string) =>
   /** 教科が未分類のもの（表示中のフォルダの中。「おまかせで分ける」の対象） */
   const unclassified = useMemo(() => inFolder.filter((p) => !subjects.get(p.id)), [inFolder, subjects]);
 
-  const createEmpty = async () => {
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const createFromTemplate = async (o: TemplateOptions) => {
+    setBusy('作成中…');
     try {
-      const meta = await createProject(defaultName(), undefined, targetFolderId, tabSubject ? { subject: tabSubject } : {});
+      const meta = await createProject(templateName(o), undefined, targetFolderId, tabSubject ? { subject: tabSubject } : {});
+      const doc = { pages: [await createTemplatePage(meta.id, o)] };
+      await saveDocument(meta.id, doc);
+      await updateThumbnail(meta.id, doc);
       onOpen(meta.id);
     } catch (e) {
       console.error(e);
       toast('作成に失敗しました', 'error');
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -747,7 +757,7 @@ export function HomeScreen({ onOpen, onSwitchDesign }: { onOpen: (id: string) =>
 
       <main className="mx-auto max-w-6xl px-4 py-5 sm:py-7" style={{ paddingBottom: `calc(${selecting ? 88 : 24}px + env(safe-area-inset-bottom))` }}>
         <div className={cx('grid gap-4', continueItems.length > 0 && 'lg:grid-cols-[340px_minmax(0,1fr)]')}>
-          {/* 作成の入口（撮影・写真/PDF・白紙） */}
+          {/* 作成の入口（撮影・写真/PDF・テンプレート） */}
           <section aria-label="プリントを読み込む" className="rounded-2xl p-4 text-white sm:p-5" style={{ background: HOME.primary }}>
             <button
               type="button"
@@ -768,7 +778,7 @@ export function HomeScreen({ onOpen, onSwitchDesign }: { onOpen: (id: string) =>
               {[
                 { label: '撮影', icon: Camera, onClick: () => cameraInput.current?.click() },
                 { label: '写真・PDF', icon: ImageIcon, onClick: () => imageInput.current?.click() },
-                { label: '白紙', icon: FileIcon, onClick: () => void createEmpty() },
+                { label: 'テンプレート', icon: LetterPaper, onClick: () => setTemplateOpen(true) },
               ].map((b) => (
                 <button
                   key={b.label}
@@ -1338,6 +1348,7 @@ export function HomeScreen({ onOpen, onSwitchDesign }: { onOpen: (id: string) =>
         onApplySubjects={(g) => void applySubjects(g)}
         onClose={() => setOrganizeMode(null)}
       />
+      <TemplateDialog open={templateOpen} onClose={() => setTemplateOpen(false)} onCreate={(o) => void createFromTemplate(o)} />
       <SaveToFolderDialog
         target={saveTarget}
         onClose={() => {

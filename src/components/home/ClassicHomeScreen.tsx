@@ -58,6 +58,9 @@ import { Button, ConfirmDialog, cx, IconButton, MenuPopover, PromptDialog } from
 import { MoveDialog } from './MoveDialog';
 import { OrganizeDialog } from './OrganizeDialog';
 import { SaveToFolderDialog } from './SaveToFolderDialog';
+import { TemplateDialog } from './TemplateDialog';
+import { templateName, type TemplateOptions } from '../../lib/paperTemplates';
+import { createTemplatePage } from '../../storage/templateProject';
 
 const fmt = new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 const collator = new Intl.Collator('ja', { numeric: true, sensitivity: 'base' });
@@ -281,9 +284,22 @@ export function ClassicHomeScreen({ onOpen, onSwitchDesign }: { onOpen: (id: str
     return sorted;
   }, [projects, q, view, sort, folderName]);
 
-  const createEmpty = async () => {
-    const meta = await createProject(defaultName(), undefined, targetFolderId);
-    onOpen(meta.id);
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const createEmpty = () => setTemplateOpen(true);
+  const createFromTemplate = async (o: TemplateOptions) => {
+    setBusy('作成中…');
+    try {
+      const meta = await createProject(templateName(o), undefined, targetFolderId);
+      const doc = { pages: [await createTemplatePage(meta.id, o)] };
+      await saveDocument(meta.id, doc);
+      await updateThumbnail(meta.id, doc);
+      onOpen(meta.id);
+    } catch (e) {
+      console.error(e);
+      toast('作成に失敗しました', 'error');
+    } finally {
+      setBusy(null);
+    }
   };
 
   const createFromImages = async (list: FileList | File[] | null) => {
@@ -592,7 +608,7 @@ export function ClassicHomeScreen({ onOpen, onSwitchDesign }: { onOpen: (id: str
               className="tap flex min-h-[76px] items-center gap-3.5 rounded-xl bg-white px-5 py-3.5 text-left ring-1 ring-black/[0.07] transition hover:ring-[#0a84ff]/60 active:bg-neutral-50"
             >
               <Plus size={24} className="shrink-0 text-neutral-500" />
-              <span className="text-[16px] font-semibold">空のプロジェクトを作成</span>
+              <span className="text-[16px] font-semibold">テンプレート（白紙・便箋・手紙など）から作成</span>
             </button>
           )}
         </div>
@@ -1003,6 +1019,7 @@ export function ClassicHomeScreen({ onOpen, onSwitchDesign }: { onOpen: (id: str
         onConfirm={() => void doBulkDelete()}
         onClose={() => setBulkDeleteOpen(false)}
       />
+      <TemplateDialog open={templateOpen} onClose={() => setTemplateOpen(false)} onCreate={(o) => void createFromTemplate(o)} />
       <MoveDialog
         open={!!moveIds}
         count={moveIds?.length ?? 0}
