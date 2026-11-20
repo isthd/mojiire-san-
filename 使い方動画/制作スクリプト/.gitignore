@@ -1,0 +1,10 @@
+audio/
+frames/
+frames.txt
+shots/
+subs.ass
+timeline.json
+voice/
+node_modules
+package.json
+package-lock.json
