@@ -1,11 +1,11 @@
 // 録画したコマ・ナレーション・字幕を1本の MP4 に合成する
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
-import ffmpeg from 'ffmpeg-static';
+const ffmpeg = process.env.FFMPEG ?? 'ffmpeg';
 
 const out = process.argv[2] ?? 'out.mp4';
 const { timeline, frames, endAbs } = JSON.parse(fs.readFileSync('timeline.json', 'utf8'));
-const subs = JSON.parse(fs.readFileSync('subs.json', 'utf8'));
+const subs = Object.fromEntries(JSON.parse(fs.readFileSync('narration.json', 'utf8')).map((n) => [n.id, n.subs]));
 const t0 = timeline[0].abs - 0.4; // 動画の開始時刻
 const T = endAbs - t0;
 
@@ -36,9 +36,10 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Step,BIZ UDPGothic,30,&H00FFB45A,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,1,0,1,0,0,7,0,0,0,1
-Style: Sub,BIZ UDPGothic,40,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0.5,0,1,0,0,7,0,0,0,1
-Style: Num,BIZ UDPGothic,26,&H00B4A096,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,9,0,0,0,1
+Style: Step,Noto Sans CJK JP,30,&H00FFB45A,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,1,0,1,0,0,7,0,0,0,1
+Style: Sub,Noto Sans CJK JP,36,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0.5,0,1,0,0,7,0,0,0,1
+Style: Credit,Noto Sans CJK JP,20,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,3,0,0,0,1
+Style: Num,Noto Sans CJK JP,26,&H00B4A096,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,9,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -61,6 +62,11 @@ timeline.forEach((sc, i) => {
     t += d;
   });
 });
+// エンディングに読み上げ音声のクレジット（CC BY 3.0）
+{
+  const last = timeline.at(-1);
+  ass += `Dialogue: 0,${ts(last.abs - t0 + 1.5)},${ts(T)},Credit,,0,0,0,,{\\an3\\pos(1780,930)\\fad(400,0)}ナレーション音声：MMDAgent "Mei"（© Nagoya Institute of Technology / CC BY 3.0）\n`;
+}
 fs.writeFileSync('subs.ass', '﻿' + ass);
 
 // 3) ナレーション音声（各シーンの開始位置に配置）
@@ -73,7 +79,7 @@ timeline.forEach((sc, i) => {
 const mix = `${delays.join(';')};${timeline.map((_, i) => `[a${i}]`).join('')}amix=inputs=${timeline.length}:normalize=0,volume=1.4,alimiter=limit=0.9:level=false,apad,atrim=0:${T.toFixed(3)}[aout]`;
 
 // 4) 映像：1664x936 に拡大して紺色の背景に配置、下の帯に字幕
-const video = `[0:v]fps=30,scale=1664:936:flags=lanczos,pad=1920:1080:128:16:color=0x0f172a,drawbox=x=124:y=12:w=1672:h=944:color=0x334155:t=4,subtitles=subs.ass:fontsdir='C\\:/Windows/Fonts'[vout]`;
+const video = `[0:v]fps=30,scale=1664:936:flags=lanczos,pad=1920:1080:128:16:color=0x0f172a,drawbox=x=124:y=12:w=1672:h=944:color=0x334155:t=4,subtitles=subs.ass[vout]`;
 
 const args = [
   '-y', '-v', 'error', '-stats',
@@ -81,7 +87,7 @@ const args = [
   ...inputs,
   '-filter_complex', `${video};${mix}`,
   '-map', '[vout]', '-map', '[aout]',
-  '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p', '-r', '30',
+  '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p', '-r', '30',
   '-c:a', 'aac', '-b:a', '160k',
   '-movflags', '+faststart', '-t', T.toFixed(3),
   out,
