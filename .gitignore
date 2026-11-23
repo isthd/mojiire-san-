@@ -7,3 +7,4 @@ public/tesseract
 tsconfig.tsbuildinfo
 dist-artifact
 public/pdfjs
+public/videos

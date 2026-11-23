@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Editor } from './components/editor/Editor';
 import { ClassicHomeScreen } from './components/home/ClassicHomeScreen';
 import { HomeScreen } from './components/home/HomeScreen';
+import { HowToVideoDialog } from './components/ui/HowToVideoDialog';
 import { NewsDialog } from './components/ui/NewsDialog';
 import { Toasts } from './components/ui/Overlays';
 import { useSettings } from './store/settingsStore';
@@ -46,6 +47,7 @@ export default function App() {
       )}
       <Toasts />
       <NewsDialog />
+      <HowToVideoDialog />
     </>
   );
 }

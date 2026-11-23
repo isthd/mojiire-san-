@@ -7,6 +7,7 @@ import {
   CheckCheck,
   CheckSquare,
   ChevronDown,
+  CirclePlay,
   Copy,
   Download,
   FileUp,
@@ -71,6 +72,7 @@ import {
 } from '../../storage/projectRepo';
 import { toast } from '../../store/toastStore';
 import type { Folder, ProjectMeta } from '../../types/model';
+import { openHowToVideo } from '../ui/HowToVideoDialog';
 import { openAllNews } from '../ui/NewsDialog';
 import { ConfirmDialog, cx, MenuPopover, PromptDialog } from '../ui/primitives';
 import { DetailsDialog, type DetailsPatch } from './DetailsDialog';
@@ -742,6 +744,17 @@ export function HomeScreen({ onOpen, onSwitchDesign }: { onOpen: (id: string) =>
           >
             <LayoutList size={18} className="max-sm:hidden" aria-hidden />
             旧デザイン
+          </button>
+          <button
+            type="button"
+            onClick={openHowToVideo}
+            aria-label="使い方動画"
+            title="使い方動画"
+            className="tap flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-neutral-300 bg-white px-2.5 text-[14px] font-medium whitespace-nowrap hover:bg-neutral-50 sm:px-3.5"
+            style={{ color: HOME.text }}
+          >
+            <CirclePlay size={18} aria-hidden />
+            <span className="max-sm:hidden">使い方動画</span>
           </button>
           <button
             type="button"

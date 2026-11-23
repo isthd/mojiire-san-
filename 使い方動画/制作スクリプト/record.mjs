@@ -1,5 +1,5 @@
 // 文字入れさん 使い方動画：実際のアプリを自動操作して録画し、シーンの開始時刻を記録する
-import { chromium } from 'playwright';
+import { chromium } from 'playwright-core';
 import fs from 'node:fs';
 
 const W = 1280, H = 720;
@@ -18,7 +18,7 @@ for (const n of narr) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const browser = await chromium.launch({ args: ['--font-render-hinting=none'] });
+const browser = await chromium.launch({ channel: 'chrome', args: ['--font-render-hinting=none'] });
 const ctx = await browser.newContext({
   viewport: { width: W, height: H },
   deviceScaleFactor: 1,
@@ -113,6 +113,17 @@ async function moveTo(x, y, ms) {
   }
   mouse = { x, y };
 }
+async function dblclick(x, y, pause = 250) {
+  await moveTo(x, y);
+  await sleep(120);
+  for (let i = 0; i < 2; i++) {
+    await page.mouse.down();
+    await sleep(50);
+    await page.mouse.up();
+    await sleep(90);
+  }
+  await sleep(pause);
+}
 async function click(x, y, pause = 250) {
   await moveTo(x, y);
   await sleep(120);
@@ -202,7 +213,8 @@ async function tapField(pred) {
   const s = await editor();
   const o = s.objs.find(pred);
   if (!o) throw new Error('field not found');
-  await click(...toScreen(s, o.x + o.w / 2, o.y + o.h / 2), 500);
+  await dblclick(...toScreen(s, o.x + o.w / 2, o.y + o.h / 2), 500);
+  await page.getByLabel('文字を入力').waitFor();
   return o;
 }
 async function pickFile(trigger, file) {
@@ -230,9 +242,9 @@ async function scene(id, fn, { tail = 0.7, lead = 0.25 } = {}) {
 
 // ===== 録画 =====
 await page.goto('http://localhost:5173/');
-await page.waitForSelector('text=画像から新規作成');
+await page.waitForSelector('text=写真・PDF');
 await page.evaluate(() => document.fonts.ready);
-const ICON = 'data:image/svg+xml;base64,' + fs.readFileSync('C:/Users/icant/OneDrive/新しいフォルダー/public/icon.svg').toString('base64');
+const ICON = 'data:image/svg+xml;base64,' + fs.readFileSync('../../public/icon.svg').toString('base64');
 await page.evaluate((icon) => window.__demoCard(`<img src="${icon}"><div class="t">文字入れさん</div><div class="s">使い方ガイド</div><div class="d">プリント・教科書・問題集の画像に、文字・数式・手書き・図形を書き込む</div>`), ICON);
 await moveTo(900, 500, 10);
 await sleep(1200);
@@ -245,9 +257,9 @@ await scene('s00', async () => {
 
 await scene('s01', async () => {
   await sleep(900);
-  await moveTo(...(await center(page.getByText('画像から新規作成'))));
+  await moveTo(...(await center(page.getByText('写真・PDF', { exact: true }))));
   await sleep(1500);
-  await pickFile(() => clickLoc(page.getByText('画像から新規作成'), 0), 'worksheet.png');
+  await pickFile(() => clickLoc(page.getByText('写真・PDF', { exact: true }), 0), 'worksheet.png');
   await page.waitForSelector('.konvajs-content');
   await sleep(1200);
   await moveTo(1000, 400);
@@ -411,19 +423,26 @@ await scene('s10', async () => {
   const dlg = page.getByRole('button', { name: 'キャンセル' });
   if (await dlg.isVisible().catch(() => false)) await clickLoc(dlg, 300);
   await clickLoc(page.getByRole('button', { name: /閉じる（ホームへ）/ }), 1200);
-  await page.waitForSelector('text=プロジェクト');
+  await page.waitForSelector('text=写真・PDF');
   await sleep(600);
-  await clickLoc(page.getByRole('button', { name: 'メニュー' }).first(), 900);
+  // 一覧のカードが見えるところまでゆっくりスクロール
+  await moveTo(640, 500);
+  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 36); await sleep(40); }
+  await sleep(500);
+  await clickLoc(page.getByRole('button', { name: /のメニュー$/ }).first(), 900);
   for (const t of ['名前を変更', '複製', 'バックアップを保存']) {
-    await moveTo(...(await center(page.getByRole('button', { name: t }))), 350);
+    await moveTo(...(await center(page.locator('[data-menu]').getByText(t, { exact: true }))), 350);
     await sleep(450);
   }
-  await clickLoc(page.getByRole('button', { name: '複製' }), 900);
+  await clickLoc(page.locator('[data-menu]').getByText('複製', { exact: true }), 900);
 }, { tail: 0.6 });
 
 // 設定（iPad向け）とエンディング
 await scene('s11', async () => {
-  await clickLoc(page.getByText('続きから編集'), 1200);
+  await page.keyboard.press('Escape');
+  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, -36); await sleep(40); }
+  await sleep(300);
+  await clickLoc(page.locator('section[aria-labelledby="continue-heading"] button').first(), 1200);
   await page.waitForSelector('.konvajs-content');
   await clickLoc(page.getByRole('button', { name: 'その他' }), 500);
   await clickLoc(page.getByRole('button', { name: '設定', exact: true }), 600);

@@ -7,6 +7,7 @@ import { updateProjectMeta } from '../../storage/projectRepo';
 import type { SaveTarget } from '../../storage/projectFolder';
 import { useEditor } from '../../store/editorStore';
 import { SaveToFolderDialog } from '../home/SaveToFolderDialog';
+import { openHowToVideo } from '../ui/HowToVideoDialog';
 import { openAllNews } from '../ui/NewsDialog';
 import { IconButton, MenuPopover, PromptDialog } from '../ui/primitives';
 
@@ -50,6 +51,7 @@ export function TopBar({ onHome, onAddImages }: { onHome: () => void; onAddImage
     },
     { label: '設定', action: () => setModal('settings') },
     { label: 'お知らせ', action: openAllNews },
+    { label: '使い方動画', action: openHowToVideo },
   ];
 
   return (

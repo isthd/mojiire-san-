@@ -5,6 +5,7 @@ import {
   Check,
   CheckSquare,
   Copy,
+  CirclePlay,
   Download,
   Ellipsis,
   FileUp,
@@ -52,6 +53,7 @@ import {
   updateProjectMeta,
 } from '../../storage/projectRepo';
 import { toast } from '../../store/toastStore';
+import { openHowToVideo } from '../ui/HowToVideoDialog';
 import { openAllNews } from '../ui/NewsDialog';
 import type { Folder, ProjectMeta } from '../../types/model';
 import { Button, ConfirmDialog, cx, IconButton, MenuPopover, PromptDialog } from '../ui/primitives';
@@ -528,6 +530,9 @@ export function ClassicHomeScreen({ onOpen, onSwitchDesign }: { onOpen: (id: str
             <LayoutGrid size={18} className="max-sm:hidden" aria-hidden />
             新デザイン
           </button>
+          <IconButton label="使い方動画" onClick={openHowToVideo} className="h-11 w-11">
+            <CirclePlay size={21} />
+          </IconButton>
           <IconButton label="お知らせ" onClick={openAllNews} className="h-11 w-11">
             <Megaphone size={21} />
           </IconButton>
