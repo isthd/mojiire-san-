@@ -817,7 +817,7 @@ function IdleBar({ onAddImages }: { onAddImages: () => void }) {
           className="tap flex h-12 flex-col items-center justify-center rounded-xl px-2.5 text-neutral-700 hover:bg-neutral-100"
         >
           <ImagePlus size={22} aria-hidden />
-          <span className="text-[11px] font-medium">画像を追加</span>
+          <span className="text-[11px] font-medium">ページを追加</span>
         </button>
       </div>
     </div>

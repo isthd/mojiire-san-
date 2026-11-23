@@ -1,5 +1,5 @@
 // 編集画面：レイアウトとプロジェクトの読み込み・自動保存
-import { ImagePlus } from 'lucide-react';
+import { FileText, ImagePlus } from 'lucide-react';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { EditorCanvas } from '../../canvas/EditorCanvas';
 import { useShortcuts } from '../../hooks/useShortcuts';
@@ -10,6 +10,7 @@ import { collectUnusedImages, getProjectMeta, loadStoredDocument } from '../../s
 import { useEditor } from '../../store/editorStore';
 import { BusyOverlay } from '../ui/Overlays';
 import { Button, cx } from '../ui/primitives';
+import { AddPageDialog } from './AddPageDialog';
 import { addImagesToProject } from './addImages';
 import { CropDialog } from './CropDialog';
 import { ExportDialog } from './ExportDialog';
@@ -34,6 +35,7 @@ export function Editor({ projectId, onHome }: { projectId: string; onHome: () =>
   const [status, setStatus] = useState<'loading' | 'ready' | 'missing'>('loading');
   const fileRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const pageCount = useEditor((s) => s.history.present.pages.length);
   const hasPages = pageCount > 0;
   const mathOpen = useEditor((s) => !!s.mathEdit);
@@ -76,6 +78,7 @@ export function Editor({ projectId, onHome }: { projectId: string; onHome: () =>
   }, [projectId]);
 
   const openPicker = () => fileRef.current?.click();
+  const openAddPage = () => setAddOpen(true);
 
   if (status === 'missing') {
     return (
@@ -106,13 +109,13 @@ export function Editor({ projectId, onHome }: { projectId: string; onHome: () =>
         void addImagesToProject(e.dataTransfer.files);
       }}
     >
-      <TopBar onHome={onHome} onAddImages={openPicker} />
+      <TopBar onHome={onHome} onAddImages={openAddPage} />
       <div className="flex min-h-0 flex-1">
         <main className="relative flex min-w-0 flex-1 flex-col">
           <div className="relative min-h-[120px] flex-1 bg-white">
             {status === 'ready' && hasPages && <EditorCanvas />}
             {status === 'ready' && !hasPages && (
-              <div className="absolute inset-0 flex items-center justify-center p-6">
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6">
                 <button
                   type="button"
                   onClick={openPicker}
@@ -128,6 +131,14 @@ export function Editor({ projectId, onHome }: { projectId: string; onHome: () =>
                     ドラッグ＆ドロップ、Ctrl+V での貼り付けにも対応（PNG・JPEG・WebP・PDF）
                   </span>
                 </button>
+                <button
+                  type="button"
+                  onClick={openAddPage}
+                  className="tap flex h-11 items-center gap-2 rounded-full px-4 text-[14px] font-medium text-[#0a84ff] hover:bg-[#0a84ff]/10"
+                >
+                  <FileText size={18} aria-hidden />
+                  白紙・方眼・便箋などのテンプレートから始める
+                </button>
               </div>
             )}
             {dragOver && (
@@ -136,11 +147,12 @@ export function Editor({ projectId, onHome }: { projectId: string; onHome: () =>
               </div>
             )}
           </div>
-          {pageCount > 1 && <PageStrip onAddImages={openPicker} />}
-          <BottomBar onAddImages={openPicker} />
+          {pageCount > 1 && <PageStrip onAddImages={openAddPage} />}
+          <BottomBar onAddImages={openAddPage} />
         </main>
       </div>
       <TextInputModal />
+      <AddPageDialog open={addOpen} onClose={() => setAddOpen(false)} onPickFiles={openPicker} />
       <input
         ref={fileRef}
         type="file"

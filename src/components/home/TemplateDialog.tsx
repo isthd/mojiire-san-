@@ -18,7 +18,7 @@ import { Button, cx, Field, Modal, Segmented } from '../ui/primitives';
 
 const PREF_KEY = 'mojiire.template';
 
-function loadPrefs(): TemplateOptions {
+export function loadTemplatePrefs(): TemplateOptions {
   const def: TemplateOptions = { kind: 'blank', size: 'a4', orientation: 'portrait', color: 'white' };
   try {
     const v = JSON.parse(localStorage.getItem(PREF_KEY) ?? 'null') as Partial<TemplateOptions> | null;
@@ -34,7 +34,7 @@ function loadPrefs(): TemplateOptions {
   }
 }
 
-function savePrefs(o: TemplateOptions) {
+export function saveTemplatePrefs(o: TemplateOptions) {
   try {
     localStorage.setItem(PREF_KEY, JSON.stringify(o));
   } catch {
@@ -70,6 +70,113 @@ function PaperPreview({ options, box }: { options: TemplateOptions; box: number 
   );
 }
 
+/** テンプレートの種類と用紙の大きさ・向き・色を選ぶ部分（ダブルタップでそのまま決定） */
+export function TemplatePicker({
+  opts,
+  onChange: set,
+  onPick,
+}: {
+  opts: TemplateOptions;
+  onChange: (patch: Partial<TemplateOptions>) => void;
+  onPick?: (o: TemplateOptions) => void;
+}) {
+  const roles = [...new Set(layoutPaper(opts).fields.map((f) => f.role))];
+  return (
+    <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_220px]">
+      <div role="radiogroup" aria-label="テンプレート" className="grid grid-cols-3 gap-2 sm:grid-cols-3">
+        {TEMPLATES.map((t) => {
+          const active = t.kind === opts.kind;
+          return (
+            <button
+              key={t.kind}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => set({ kind: t.kind as TemplateKind })}
+              onDoubleClick={() => onPick?.({ ...opts, kind: t.kind })}
+              className={cx(
+                'tap relative flex flex-col items-center gap-1.5 rounded-xl border px-1.5 pt-2.5 pb-2 text-center transition',
+                active ? 'border-[#0a84ff] bg-[#0a84ff]/[0.07] ring-2 ring-[#0a84ff]/40' : 'border-neutral-200 hover:bg-neutral-50',
+              )}
+            >
+              <span className="flex h-[84px] items-center justify-center">
+                <PaperPreview options={{ ...opts, kind: t.kind }} box={80} />
+              </span>
+              <span className="text-[13px] leading-tight font-semibold">{t.label}</span>
+              <span className="text-[11px] leading-tight text-neutral-500">{t.note}</span>
+              {active && (
+                <span className="absolute top-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#0a84ff] text-white">
+                  <Check size={13} strokeWidth={3} aria-hidden />
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="space-y-4">
+        <div className="hidden justify-center rounded-xl bg-neutral-100 py-4 sm:flex">
+          <PaperPreview options={opts} box={170} />
+        </div>
+        <Field label="用紙の大きさ">
+          <Segmented<PaperSizeKey>
+            ariaLabel="用紙の大きさ"
+            value={opts.size}
+            onChange={(size) => set({ size })}
+            options={PAPER_SIZES.map((p) => ({ value: p.key, label: p.label }))}
+          />
+        </Field>
+        <Field label="向き">
+          <Segmented<Orientation>
+            ariaLabel="向き"
+            value={opts.orientation}
+            onChange={(orientation) => set({ orientation })}
+            options={[
+              { value: 'portrait', label: '縦' },
+              { value: 'landscape', label: '横' },
+            ]}
+          />
+        </Field>
+        <Field label="紙の色">
+          <div role="radiogroup" aria-label="紙の色" className="flex flex-wrap gap-1">
+            {PAPER_COLORS.map((c) => {
+              const active = c.key === opts.color;
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  aria-label={c.label}
+                  title={c.label}
+                  onClick={() => set({ color: c.key as PaperColorKey })}
+                  className={cx(
+                    'tap flex h-11 w-10 items-center justify-center rounded-full border-2 transition',
+                    active ? 'border-[#0a84ff]' : 'border-transparent',
+                  )}
+                >
+                  <span
+                    className="flex h-8 w-8 items-center justify-center rounded-full"
+                    style={{ background: c.bg, boxShadow: `inset 0 0 0 2px ${c.line}` }}
+                  >
+                    {active && <Check size={15} strokeWidth={3} style={{ color: c.ink }} aria-hidden />}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="text-[12px] text-neutral-500">{PAPER_COLORS.find((c) => c.key === opts.color)?.label}</div>
+        </Field>
+        {roles.length > 0 && (
+          <p className="text-[12px] leading-relaxed text-neutral-500">
+            {roles.join('・')}の「ダブルタップで入力」の枠が最初から置かれます。
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function TemplateDialog({
   open,
   onClose,
@@ -79,18 +186,18 @@ export function TemplateDialog({
   onClose: () => void;
   onCreate: (o: TemplateOptions) => void;
 }) {
-  const [opts, setOpts] = useState<TemplateOptions>(loadPrefs);
+  const [opts, setOpts] = useState<TemplateOptions>(loadTemplatePrefs);
   useEffect(() => {
-    if (open) setOpts(loadPrefs());
+    if (open) setOpts(loadTemplatePrefs());
   }, [open]);
   const set = (patch: Partial<TemplateOptions>) => setOpts((o) => ({ ...o, ...patch }));
-  const create = () => {
-    savePrefs(opts);
-    onCreate(opts);
+  const pick = (o: TemplateOptions) => {
+    saveTemplatePrefs(o);
+    onCreate(o);
     onClose();
   };
+  const create = () => pick(opts);
   const current = TEMPLATES.find((t) => t.kind === opts.kind) ?? TEMPLATES[0];
-  const roles = [...new Set(layoutPaper(opts).fields.map((f) => f.role))];
 
   return (
     <Modal
@@ -107,103 +214,7 @@ export function TemplateDialog({
         </>
       }
     >
-      <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_220px]">
-        <div role="radiogroup" aria-label="テンプレート" className="grid grid-cols-3 gap-2 sm:grid-cols-3">
-          {TEMPLATES.map((t) => {
-            const active = t.kind === opts.kind;
-            return (
-              <button
-                key={t.kind}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => set({ kind: t.kind as TemplateKind })}
-                onDoubleClick={() => {
-                  set({ kind: t.kind });
-                  savePrefs({ ...opts, kind: t.kind });
-                  onCreate({ ...opts, kind: t.kind });
-                  onClose();
-                }}
-                className={cx(
-                  'tap relative flex flex-col items-center gap-1.5 rounded-xl border px-1.5 pt-2.5 pb-2 text-center transition',
-                  active ? 'border-[#0a84ff] bg-[#0a84ff]/[0.07] ring-2 ring-[#0a84ff]/40' : 'border-neutral-200 hover:bg-neutral-50',
-                )}
-              >
-                <span className="flex h-[84px] items-center justify-center">
-                  <PaperPreview options={{ ...opts, kind: t.kind }} box={80} />
-                </span>
-                <span className="text-[13px] leading-tight font-semibold">{t.label}</span>
-                <span className="text-[11px] leading-tight text-neutral-500">{t.note}</span>
-                {active && (
-                  <span className="absolute top-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#0a84ff] text-white">
-                    <Check size={13} strokeWidth={3} aria-hidden />
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="space-y-4">
-          <div className="hidden justify-center rounded-xl bg-neutral-100 py-4 sm:flex">
-            <PaperPreview options={opts} box={170} />
-          </div>
-          <Field label="用紙の大きさ">
-            <Segmented<PaperSizeKey>
-              ariaLabel="用紙の大きさ"
-              value={opts.size}
-              onChange={(size) => set({ size })}
-              options={PAPER_SIZES.map((p) => ({ value: p.key, label: p.label }))}
-            />
-          </Field>
-          <Field label="向き">
-            <Segmented<Orientation>
-              ariaLabel="向き"
-              value={opts.orientation}
-              onChange={(orientation) => set({ orientation })}
-              options={[
-                { value: 'portrait', label: '縦' },
-                { value: 'landscape', label: '横' },
-              ]}
-            />
-          </Field>
-          <Field label="紙の色">
-            <div role="radiogroup" aria-label="紙の色" className="flex flex-wrap gap-1">
-              {PAPER_COLORS.map((c) => {
-                const active = c.key === opts.color;
-                return (
-                  <button
-                    key={c.key}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    aria-label={c.label}
-                    title={c.label}
-                    onClick={() => set({ color: c.key as PaperColorKey })}
-                    className={cx(
-                      'tap flex h-11 w-10 items-center justify-center rounded-full border-2 transition',
-                      active ? 'border-[#0a84ff]' : 'border-transparent',
-                    )}
-                  >
-                    <span
-                      className="flex h-8 w-8 items-center justify-center rounded-full"
-                      style={{ background: c.bg, boxShadow: `inset 0 0 0 2px ${c.line}` }}
-                    >
-                      {active && <Check size={15} strokeWidth={3} style={{ color: c.ink }} aria-hidden />}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="text-[12px] text-neutral-500">{PAPER_COLORS.find((c) => c.key === opts.color)?.label}</div>
-          </Field>
-          {roles.length > 0 && (
-            <p className="text-[12px] leading-relaxed text-neutral-500">
-              {roles.join('・')}の「ダブルタップで入力」の枠が最初から置かれます。
-            </p>
-          )}
-        </div>
-      </div>
+      <TemplatePicker opts={opts} onChange={set} onPick={pick} />
     </Modal>
   );
 }
