@@ -1,0 +1,803 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>作り方動画</title>
+<style>html,body{margin:0;background:#000}canvas{display:block}</style></head>
+<body><canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// 文字入れさん「作り方」動画：すべてコードで描くアニメーション。
+// window.setup(timeline) のあと window.frame(t, amp) で t 秒の絵を描き、JPEG を返す。
+const cv = document.getElementById('c');
+const g = cv.getContext('2d');
+const W = 1920, H = 1080;
+const C = {
+  bg: '#1d1c1a', bg2: '#262522', panel: '#2f2d29', line: '#45423c', text: '#f4f1e8', dim: '#a8a397',
+  orange: '#d97757', orange2: '#e9a284', green: '#7cc47f', red: '#e46a6a', blue: '#6aaeea', yellow: '#e8c26a',
+  paper: '#fbfaf5', ink: '#33312c', purple: '#b48ee8',
+};
+const UI = '"BIZ UDPGothic","Yu Gothic UI","Meiryo",sans-serif';
+const MONO = '"BIZ UDGothic","Consolas",monospace';
+
+// ---------- 小道具 ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const eo = (x) => 1 - Math.pow(1 - clamp(x), 3);
+const eio = (x) => { x = clamp(x); return x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
+const prog = (v, a, b) => clamp((v - a) / (b - a));
+const lerp = (a, b, k) => a + (b - a) * k;
+
+function rr(x, y, w, h, r, fill, stroke, lw = 3) {
+  g.beginPath(); g.roundRect(x, y, w, h, r);
+  if (fill) { g.fillStyle = fill; g.fill(); }
+  if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw; g.stroke(); }
+}
+function txt(s, x, y, size, color = C.text, align = 'left', font = UI, weight = '700') {
+  g.font = `${weight} ${size}px ${font}`; g.fillStyle = color; g.textAlign = align; g.textBaseline = 'middle';
+  g.fillText(s, x, y);
+}
+function tw(s, size, font = UI, weight = '700') { g.font = `${weight} ${size}px ${font}`; return g.measureText(s).width; }
+// 透明度と下からの出現
+function appear(k, fn, dy = 24) {
+  if (k <= 0) return;
+  g.save(); g.globalAlpha *= clamp(k); g.translate(0, (1 - eo(k)) * dy); fn(); g.restore();
+}
+function pop(k, cx, cy, fn) {
+  if (k <= 0) return;
+  const s = k < 1 ? 0.6 + 0.4 * eo(k) + Math.sin(clamp(k) * Math.PI) * 0.08 : 1;
+  g.save(); g.globalAlpha *= clamp(k * 1.5); g.translate(cx, cy); g.scale(s, s); g.translate(-cx, -cy); fn(); g.restore();
+}
+function check(x, y, r, k = 1, color = C.green) {
+  if (k <= 0) return;
+  g.save(); g.globalAlpha *= clamp(k * 2);
+  g.beginPath(); g.arc(x, y, r, 0, 7); g.fillStyle = color; g.fill();
+  g.strokeStyle = C.bg; g.lineWidth = r * 0.28; g.lineCap = 'round'; g.lineJoin = 'round';
+  const p = eo(k); g.beginPath(); g.moveTo(x - r * .45, y + r * .02);
+  const mx = x - r * .12, my = y + r * .35, ex = x + r * .48, ey = y - r * .35;
+  if (p < .4) g.lineTo(lerp(x - r * .45, mx, p / .4), lerp(y, my, p / .4));
+  else { g.lineTo(mx, my); g.lineTo(lerp(mx, ex, (p - .4) / .6), lerp(my, ey, (p - .4) / .6)); }
+  g.stroke(); g.restore();
+}
+function cross(x, y, r, k = 1, color = C.red) {
+  if (k <= 0) return;
+  g.save(); g.globalAlpha *= clamp(k * 2);
+  g.beginPath(); g.arc(x, y, r, 0, 7); g.fillStyle = color; g.fill();
+  g.strokeStyle = C.bg; g.lineWidth = r * 0.28; g.lineCap = 'round';
+  const p = eo(k), d = r * .38;
+  g.beginPath(); g.moveTo(x - d, y - d); g.lineTo(x - d + 2 * d * clamp(p * 2), y - d + 2 * d * clamp(p * 2));
+  if (p > .5) { g.moveTo(x + d, y - d); g.lineTo(x + d - 2 * d * clamp(p * 2 - 1), y - d + 2 * d * clamp(p * 2 - 1)); }
+  g.stroke(); g.restore();
+}
+function arrow(x1, y1, x2, y2, k = 1, color = C.dim, lw = 5) {
+  if (k <= 0) return;
+  const p = eo(k), ex = lerp(x1, x2, p), ey = lerp(y1, y2, p), a = Math.atan2(y2 - y1, x2 - x1);
+  g.save(); g.strokeStyle = color; g.fillStyle = color; g.lineWidth = lw; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(x1, y1); g.lineTo(ex - Math.cos(a) * 8, ey - Math.sin(a) * 8); g.stroke();
+  g.beginPath(); g.moveTo(ex, ey); g.lineTo(ex - 22 * Math.cos(a - .45), ey - 22 * Math.sin(a - .45));
+  g.lineTo(ex - 22 * Math.cos(a + .45), ey - 22 * Math.sin(a + .45)); g.closePath(); g.fill(); g.restore();
+}
+function win(x, y, w, h, title, color = C.panel) {
+  g.save(); g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = 30; g.shadowOffsetY = 10;
+  rr(x, y, w, h, 18, color); g.restore();
+  rr(x, y, w, h, 18, null, C.line, 2);
+  g.save(); g.beginPath(); g.roundRect(x, y, w, 52, [18, 18, 0, 0]); g.fillStyle = '#3a3833'; g.fill(); g.restore();
+  ['#e46a6a', '#e8c26a', '#7cc47f'].forEach((c, i) => { g.beginPath(); g.arc(x + 30 + i * 26, y + 26, 8, 0, 7); g.fillStyle = c; g.fill(); });
+  if (title) txt(title, x + w / 2, y + 27, 22, C.dim, 'center', MONO, '400');
+}
+function chip(s, x, y, size, bg, fg = C.bg, align = 'left') {
+  const w = tw(s, size) + size * 1.1, h = size * 1.7;
+  const x0 = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x;
+  rr(x0, y - h / 2, w, h, h / 2, bg); txt(s, x0 + w / 2, y + 1, size, fg, 'center');
+  return w;
+}
+function ripple(x, y, k, color = C.yellow) {
+  if (k <= 0 || k >= 1) return;
+  g.save(); g.globalAlpha = 1 - k; g.strokeStyle = color; g.lineWidth = 6;
+  g.beginPath(); g.arc(x, y, 14 + 50 * eo(k), 0, 7); g.stroke();
+  g.globalAlpha = (1 - k) * .8; g.fillStyle = color; g.beginPath(); g.arc(x, y, 12, 0, 7); g.fill(); g.restore();
+}
+function finger(x, y, k) { // 指先のマーク
+  if (k <= 0) return;
+  g.save(); g.globalAlpha *= clamp(k * 3);
+  g.beginPath(); g.arc(x, y, 16, 0, 7); g.fillStyle = 'rgba(255,255,255,.85)'; g.fill();
+  g.lineWidth = 3; g.strokeStyle = C.bg; g.stroke(); g.restore();
+}
+function sparkle(x, y, s, a) {
+  g.save(); g.translate(x, y); g.rotate(a); g.fillStyle = C.yellow;
+  g.beginPath();
+  for (let i = 0; i < 8; i++) { const r = i % 2 ? s * .3 : s; const t = i * Math.PI / 4; g.lineTo(Math.cos(t) * r, Math.sin(t) * r); }
+  g.closePath(); g.fill(); g.restore();
+}
+
+// ---------- キャラクター（ドット絵） ----------
+// 体 9x6 マス、左右に腕、下に脚4本。目は暗い四角。
+function clawd(cx, by, u, st) {
+  const t = st.t;
+  const talk = st.amp || 0;
+  const bob = Math.sin(t * 2.4) * u * .18 + (st.jump ? -Math.abs(Math.sin(t * 9)) * u * 1.6 * st.jump : 0);
+  const sq = 1 + talk * .07;
+  // 影
+  g.save(); g.globalAlpha = .35; g.fillStyle = '#000';
+  g.beginPath(); g.ellipse(cx, by + 4, u * 5.2 - bob * .3, u * .7, 0, 0, 7); g.fill(); g.restore();
+  g.save(); g.translate(cx, by + bob);
+  // 脚
+  const legs = [-3.5, -1.5, 0.5, 2.5];
+  legs.forEach((lx, i) => {
+    const lift = st.walk ? Math.max(0, Math.sin(t * 10 + (i % 2) * Math.PI)) * u * .6 : 0;
+    g.fillStyle = C.orange; g.fillRect(lx * u, -2 * u - lift, u, 2 * u);
+  });
+  g.translate(0, -2 * u); g.scale(1 / Math.sqrt(sq), sq);
+  const bx = -4.5 * u, bt = -6 * u;
+  // 腕（armL/armR: 0=下ろす 1=上げる）
+  const arm = (side, k) => {
+    const x = side < 0 ? bx - u : bx + 9 * u;
+    const y = bt + 2.5 * u - k * 4 * u + (k > .5 ? Math.sin(t * 12) * u * .25 * (st.wave || 0) : 0);
+    g.fillStyle = C.orange; g.fillRect(x, y, u, 2 * u);
+  };
+  arm(-1, st.armL || 0); arm(1, st.armR || 0);
+  // 体
+  g.fillStyle = C.orange; g.fillRect(bx, bt, 9 * u, 6 * u);
+  g.fillStyle = 'rgba(255,255,255,.08)'; g.fillRect(bx, bt, 9 * u, u * .5);
+  // 目
+  const blink = (t % 3.7) < .12 ? .15 : 1;
+  const lx = (st.look || 0) * u * .35, ly = (st.lookY || 0) * u * .3;
+  g.fillStyle = C.bg;
+  [-2.5, 1.5].forEach((ex) => {
+    const x = ex * u + lx, y = bt + 1.6 * u + ly;
+    if (st.mood === 'happy') {
+      g.save(); g.strokeStyle = C.bg; g.lineWidth = u * .42; g.lineCap = 'square';
+      g.beginPath(); g.moveTo(x - u * .1, y + u * 1.1); g.lineTo(x + u * .5, y + u * .35); g.lineTo(x + u * 1.1, y + u * 1.1); g.stroke(); g.restore();
+    } else {
+      const h = 1.6 * u * blink;
+      g.fillRect(x, y + (1.6 * u - h) / 2, u, h);
+    }
+  });
+  g.restore();
+  // 表情の飾り（頭の上）
+  const hx = cx + 3.6 * u, hy = by + bob - 9.2 * u;
+  if (st.mood === 'sweat') {
+    const k = (t * 1.3) % 1;
+    g.save(); g.globalAlpha = 1 - k * .6; g.fillStyle = C.blue;
+    const sx = cx + 5.2 * u, sy = by + bob - 7.4 * u + k * u * 1.2;
+    g.beginPath(); g.moveTo(sx, sy - u * .9); g.quadraticCurveTo(sx + u * .7, sy + u * .1, sx, sy + u * .45);
+    g.quadraticCurveTo(sx - u * .7, sy + u * .1, sx, sy - u * .9); g.fill(); g.restore();
+  }
+  if (st.emote) {
+    const k = st.emoteK ?? 1;
+    pop(k, hx, hy, () => {
+      g.save(); g.fillStyle = C.text;
+      g.beginPath(); g.arc(hx, hy, u * 1.35, 0, 7); g.fill();
+      g.beginPath(); g.moveTo(hx - u * .9, hy + u * .8); g.lineTo(hx - u * 1.5, hy + u * 1.9); g.lineTo(hx - u * .1, hy + u * 1.2); g.fill();
+      txt(st.emote, hx, hy + 2, u * 1.6, st.emote === '!' ? C.orange : st.emote === '?' ? C.blue : C.green, 'center', UI, '900');
+      g.restore();
+    });
+  }
+  if (st.mood === 'happy' || st.sparkle) {
+    for (let i = 0; i < 4; i++) {
+      const a = t * 1.5 + i * 1.6, r = u * (6.5 + Math.sin(t * 3 + i) * .6);
+      const s = u * (.35 + .25 * Math.sin(t * 5 + i * 2) ** 2);
+      sparkle(cx + Math.cos(a) * r * 1.1, by - 4.5 * u + Math.sin(a) * r * .75, s, t + i);
+    }
+  }
+  // 持ち物
+  if (st.prop) {
+    const px = cx + 5.6 * u, py = by + bob - 2 * u - 6 * u + 2.5 * u - (st.armR || 0) * 4 * u;
+    g.save(); g.translate(px, py);
+    if (st.prop === 'glass') {
+      g.rotate(-.5); g.strokeStyle = '#d9d4c7'; g.lineWidth = u * .45;
+      g.beginPath(); g.arc(u * .9, -u * 1.6, u * 1.2, 0, 7); g.stroke();
+      g.fillStyle = 'rgba(160,210,255,.25)'; g.fill();
+      g.fillStyle = '#8a6a4a'; g.fillRect(u * .55, -u * .4, u * .6, u * 1.8);
+    } else if (st.prop === 'wrench') {
+      g.rotate(-.7); g.fillStyle = '#c9c4b8';
+      g.fillRect(u * .2, -u * 2.8, u * .7, u * 3.2);
+      g.beginPath(); g.arc(u * .55, -u * 3.1, u * .9, 0, 7); g.fill();
+      g.fillStyle = C.bg; g.fillRect(u * .3, -u * 4.1, u * .5, u * 1);
+    } else if (st.prop === 'flag') {
+      g.fillStyle = '#d9d4c7'; g.fillRect(u * .3, -u * 4.5, u * .35, u * 5);
+      g.fillStyle = C.green; g.beginPath(); g.moveTo(u * .65, -u * 4.5); g.lineTo(u * 3, -u * 3.7); g.lineTo(u * .65, -u * 2.9); g.fill();
+    }
+    g.restore();
+  }
+}
+
+// ---------- 状態 ----------
+let TL = null; // [{id,title,date,start,dur,voice,adur,subs,lineStarts}]
+let TOTAL = 0;
+window.setup = (timeline, total) => {
+  TL = timeline; TOTAL = total;
+  for (const s of TL) {
+    const n = s.subs.reduce((a, l) => a + l.length, 0);
+    let acc = 0; s.lineStarts = s.subs.map((l) => { const v = acc / n; acc += l.length; return v; });
+  }
+};
+
+// ---------- 各シーンの絵 ----------
+// v: ナレーションの進み具合（0〜1）、L: 字幕の各行が始まる v、lt: シーン内の秒
+const SX = 640, SY = 150, SW = 1220, SH = 700; // 右のステージ
+const V = {};
+
+V.s00 = (v, L, lt) => {
+  const cx = SX + SW / 2;
+  appear(prog(lt, .1, .9), () => {
+    txt('Claude Code と作る', cx, SY + 110, 46, C.orange2, 'center');
+    txt('文字入れさん の作り方', cx, SY + 200, 92, C.text, 'center', UI, '900');
+  });
+  appear(prog(lt, .7, 1.5), () => txt('最近の指示と、そのときの試行錯誤', cx, SY + 290, 40, C.dim, 'center'));
+  // 日付のタイムライン
+  const x0 = SX + 90, x1 = SX + SW - 90, y = SY + 450;
+  const k = eio(prog(v, .25, .85));
+  g.strokeStyle = C.line; g.lineWidth = 6; g.beginPath(); g.moveTo(x0, y); g.lineTo(lerp(x0, x1, k), y); g.stroke();
+  const pts = [['10/23', '最初のコミット', 0], ['11/5', '回答欄・ダブルタップ', .42], ['11/9', '文字数', .55], ['11/12', 'PDF・並べ替え', .65], ['11/16', '予測変換', .78], ['11/21', '数式キーボード', .95]];
+  pts.forEach(([d, s, p], i) => {
+    const kk = prog(k, p - .02, p + .08);
+    pop(kk, lerp(x0, x1, p), y, () => {
+      const x = lerp(x0, x1, p);
+      g.beginPath(); g.arc(x, y, 14, 0, 7); g.fillStyle = i ? C.orange : C.dim; g.fill();
+      txt(d, x, y - 42, 28, C.text, 'center');
+      txt(s, x, y + (i % 2 ? 50 : 88), 22, C.dim, 'center');
+    });
+  });
+  const stats = [['コミット', '54'], ['自動テスト', '167件'], ['コード', '約1.8万行']];
+  stats.forEach(([a, b], i) => appear(prog(v, .55 + i * .08, .7 + i * .08), () => {
+    const x = SX + 60 + i * 380, yy = SY + 640;
+    rr(x, yy - 45, 350, 90, 20, C.panel, C.line, 2);
+    txt(a, x + 24, yy, 24, C.dim); txt(b, x + 326, yy, 36, C.orange2, 'right', UI, '900');
+  }));
+};
+
+V.s01 = (v, L) => {
+  // 左：アプリの層
+  appear(prog(v, 0, .08), () => {
+    win(SX, SY + 10, 560, 600, 'ブラウザ');
+    const x = SX + 40, y = SY + 90;
+    rr(x, y, 480, 300, 8, C.paper);
+    g.fillStyle = '#c9c3b5'; for (let i = 0; i < 6; i++) g.fillRect(x + 30, y + 40 + i * 42, i % 2 ? 260 : 380, 8);
+    g.strokeStyle = C.ink; g.lineWidth = 2; g.strokeRect(x + 300, y + 200, 150, 60);
+    appear(prog(v, .12, .2), () => txt('答え 42', x + 375, y + 231, 30, '#c0392b', 'center'));
+    appear(prog(v, .15, .25), () => txt('x² + 1', x + 120, y + 270, 28, '#2b62c0', 'center', 'Cambria Math,serif', '400'));
+  });
+  const layers = [['React + TypeScript', '画面と操作', C.blue, .05], ['Konva', '画像に文字・数式を重ねる', C.orange, .15], ['IndexedDB', '端末の中だけに保存', C.green, .3]];
+  layers.forEach(([a, b, c, p], i) => appear(prog(v, p, p + .08), () => {
+    const y = SY + 430 + i * 58;
+    rr(SX + 40, y, 480, 48, 10, c + '33', c, 2);
+    txt(a, SX + 60, y + 25, 22, C.text); txt(b, SX + 500, y + 25, 18, C.dim, 'right');
+  }));
+  // 右：公開の流れ
+  const bx = SX + 660, steps = [['git push', 'main ブランチへ', C.text], ['GitHub Actions', 'テスト → ビルド', C.yellow], ['GitHub Pages', '公開（自動）', C.green]];
+  steps.forEach(([a, b, c], i) => {
+    const k = prog(v, L[2] + i * .1, L[2] + i * .1 + .08);
+    appear(k, () => {
+      const y = SY + 60 + i * 220;
+      rr(bx, y, 540, 140, 22, C.panel, c, 3);
+      txt(a, bx + 40, y + 52, 40, c, 'left', MONO, '700'); txt(b, bx + 40, y + 102, 26, C.dim);
+      if (i === 1) { check(bx + 420, y + 70, 24, prog(v, L[2] + .22, L[2] + .27)); check(bx + 480, y + 70, 24, prog(v, L[2] + .26, L[2] + .31)); }
+      if (i === 2) check(bx + 480, y + 70, 28, prog(v, L[3] + .02, L[3] + .1));
+    });
+    if (i < 2) arrow(bx + 270, SY + 210 + i * 220, bx + 270, SY + 270 + i * 220, prog(v, L[2] + i * .1 + .06, L[2] + i * .1 + .12), C.dim);
+  });
+  // 流れる点
+  const fk = prog(v, L[2], L[3] + .1);
+  if (fk > 0 && fk < 1) { g.beginPath(); g.arc(bx + 520, SY + 130 + fk * 440, 10, 0, 7); g.fillStyle = C.orange; g.fill(); }
+};
+
+V.s02 = (v, L) => {
+  const cx = SX + SW / 2, cy = SY + SH / 2 - 10, R = 270;
+  const nodes = ['コードを読む', '原因の見当', '直す', 'テストを足す', 'ブラウザで確認', '公開', 'お知らせ'];
+  const at = [L[0] + .05, L[1] + .0, L[1] + .12, L[1] + .22, L[2] + .02, L[2] + .2, L[3] + .05];
+  pop(prog(v, 0, .06), cx, cy, () => {
+    g.beginPath(); g.arc(cx, cy, 110, 0, 7); g.fillStyle = C.orange; g.fill();
+    txt('指示', cx, cy - 14, 50, C.bg, 'center', UI, '900'); txt('（チャット）', cx, cy + 36, 22, C.bg, 'center');
+  });
+  let cur = -1; at.forEach((a, i) => { if (v >= a) cur = i; });
+  // 円の軌道
+  g.save(); g.setLineDash([10, 14]); g.strokeStyle = C.line; g.lineWidth = 4;
+  g.beginPath(); g.arc(cx, cy, R, 0, 7); g.stroke(); g.restore();
+  nodes.forEach((s, i) => {
+    const a = -Math.PI / 2 + i * Math.PI * 2 / nodes.length;
+    const x = cx + Math.cos(a) * R * 1.45, y = cy + Math.sin(a) * R * .98;
+    const k = prog(v, at[i] - .03, at[i] + .04);
+    pop(k, x, y, () => {
+      const on = i === cur, w = tw(s, 30) + 60;
+      rr(x - w / 2, y - 36, w, 72, 36, on ? C.yellow : C.panel, on ? C.yellow : C.line, 3);
+      txt(s, x, y + 1, 30, on ? C.bg : C.text, 'center');
+      chip(String(i + 1), x - w / 2 - 4, y - 34, 18, C.orange, C.bg, 'center');
+    });
+  });
+};
+
+V.s03 = (v, L, lt) => {
+  // 左：縮小表示のスマホ
+  const px = SX + 20, py = SY;
+  appear(prog(v, 0, .06), () => {
+    rr(px, py, 330, 640, 44, '#111', '#555', 4);
+    rr(px + 18, py + 60, 294, 520, 12, C.paper);
+    g.fillStyle = '#cfc9bb'; for (let i = 0; i < 9; i++) g.fillRect(px + 40, py + 100 + i * 50, i % 3 === 1 ? 120 : 230, 6);
+    txt('問2', px + 50, py + 262, 16, C.ink); g.strokeStyle = C.ink; g.lineWidth = 2; g.strokeRect(px + 90, py + 252, 60, 18);
+    txt('縮小表示', px + 165, py + 610, 22, C.dim, 'center');
+    g.strokeStyle = C.yellow; g.lineWidth = 3; g.strokeRect(px + 84, py + 246, 72, 30);
+  });
+  arrow(px + 160, py + 261, SX + 420, SY + 260, prog(v, .1, .18), C.yellow, 4);
+  // 右：拡大図
+  const fx = SX + 620, fy = SY + 200, fw = 440, fh = 132;
+  appear(prog(v, .12, .2), () => {
+    rr(SX + 430, SY + 20, 780, 560, 24, C.panel, C.line, 2);
+    txt('拡大すると…（画面上では 60×18px）', SX + 460, SY + 60, 26, C.dim);
+    txt('問2', fx - 80, fy + fh / 2, 40, C.text, 'center');
+    g.fillStyle = C.paper; g.fillRect(fx, fy, fw, fh);
+    g.strokeStyle = C.ink; g.lineWidth = 4; g.strokeRect(fx, fy, fw, fh);
+  });
+  // 1回目のタップ → ハンドル
+  const t1 = L[2] + .02, t2 = L[3] + .02;
+  const tap1 = prog(v, t1, t1 + .06), sel = prog(v, t1 + .04, t1 + .08);
+  finger(fx + fw / 2, fy + fh / 2, tap1 > 0 && v < t1 + .12 ? 1 : 0);
+  ripple(fx + fw / 2, fy + fh / 2, prog(v, t1, t1 + .06));
+  if (sel > 0) {
+    g.save(); g.globalAlpha = sel;
+    g.strokeStyle = C.blue; g.lineWidth = 4; g.strokeRect(fx - 6, fy - 6, fw + 12, fh + 12);
+    const hr = 26 * 4 / 2 + 8; // 22px+余白 を4倍
+    [[fx, fy], [fx + fw, fy], [fx, fy + fh], [fx + fw, fy + fh]].forEach(([x, y]) => {
+      g.beginPath(); g.arc(x, y, hr * .9, 0, 7); g.fillStyle = 'rgba(106,174,234,.55)'; g.fill();
+      g.lineWidth = 4; g.strokeStyle = '#fff'; g.stroke();
+    });
+    g.restore();
+    appear(prog(v, t1 + .06, t1 + .12), () => txt('四隅のハンドルが枠をほとんど覆う', SX + 820, fy + fh + 120, 28, C.blue, 'center'));
+  }
+  // 2回目 → ハンドルに当たる
+  const hx = fx + fw - 30, hy = fy + fh - 20;
+  finger(hx, hy, prog(v, t2 - .02, t2) > 0 ? 1 : 0);
+  ripple(hx, hy, prog(v, t2, t2 + .06), C.red);
+  appear(prog(v, t2 + .04, t2 + .1), () => {
+    cross(SX + 600, SY + 520, 26, prog(v, t2 + .04, t2 + .12));
+    txt('2回目のタップをハンドルが横取り', SX + 640, SY + 522, 30, C.red);
+  });
+  appear(prog(v, L[1], L[1] + .05), () => chip('相談：「まだ実装しないで、考えを聞かせて」', SX + 430, SY + 640, 26, C.orange2));
+};
+
+V.s04 = (v, L, lt) => {
+  // 左：自前のダブルタップ判定
+  const x = SX, y = SY;
+  appear(prog(v, 0, .06), () => {
+    rr(x, y, 580, 620, 24, C.panel, C.line, 2);
+    txt('① ダブルタップをアプリ側で判定', x + 30, y + 50, 30, C.yellow);
+    // 時間の帯
+    const bx = x + 50, by = y + 150, bw = 480;
+    g.fillStyle = C.line; g.fillRect(bx, by, bw, 10);
+    g.fillStyle = C.green + '88'; g.fillRect(bx, by, bw * .7, 10);
+    txt('0', bx, by + 40, 22, C.dim, 'center'); txt('350ms 以内', bx + bw * .7, by + 40, 22, C.green, 'center');
+    const a = prog(v, .06, .1), b = prog(v, .14, .18);
+    pop(a, bx + 30, by + 5, () => { g.beginPath(); g.arc(bx + 30, by + 5, 16, 0, 7); g.fillStyle = C.yellow; g.fill(); txt('1', bx + 30, by + 6, 18, C.bg, 'center'); });
+    pop(b, bx + 250, by + 5, () => { g.beginPath(); g.arc(bx + 250, by + 5, 16, 0, 7); g.fillStyle = C.yellow; g.fill(); txt('2', bx + 250, by + 6, 18, C.bg, 'center'); });
+    // 位置のずれ
+    const cx = x + 180, cy = y + 340;
+    g.save(); g.setLineDash([8, 8]); g.strokeStyle = C.green; g.lineWidth = 3; g.beginPath(); g.arc(cx, cy, 80, 0, 7); g.stroke(); g.restore();
+    pop(a, cx, cy, () => { g.beginPath(); g.arc(cx, cy, 12, 0, 7); g.fillStyle = C.yellow; g.fill(); });
+    pop(b, cx + 38, cy + 30, () => { g.beginPath(); g.arc(cx + 38, cy + 30, 12, 0, 7); g.fillStyle = C.yellow; g.fill(); });
+    txt('少しずれても', cx + 110, cy - 20, 24, C.text); txt('ハンドルの上でも OK', cx + 110, cy + 20, 24, C.text);
+    // 44px
+    const k = prog(v, L[1], L[1] + .08);
+    const ax = x + 120, ay = y + 500;
+    g.fillStyle = C.paper; g.fillRect(ax, ay, 120, 36); g.strokeStyle = C.ink; g.lineWidth = 3; g.strokeRect(ax, ay, 120, 36);
+    txt('③ 未入力の枠は', ax + 170, ay + 2, 24, C.yellow);
+    txt('最低 44px で受ける', ax + 170, ay + 40, 24, C.yellow);
+    if (k > 0) { const e = 30 * eo(k); g.save(); g.setLineDash([10, 8]); g.strokeStyle = C.yellow; g.lineWidth = 3; g.strokeRect(ax - e, ay - e, 120 + 2 * e, 36 + 2 * e); g.restore(); }
+  });
+  // 右：改行された回答欄
+  const rx = SX + 620, ry = SY;
+  appear(prog(v, L[2] - .02, L[2] + .05), () => {
+    rr(rx, ry, 600, 620, 24, C.panel, C.line, 2);
+    txt('改行された回答欄（B案）', rx + 30, ry + 50, 30, C.yellow);
+    rr(rx + 30, ry + 100, 540, 330, 10, C.paper);
+    const tx = rx + 60;
+    txt('問3 光合成のしくみを書け。', tx, ry + 150, 26, C.ink);
+    const f1 = [tx + 200, ry + 200, 290, 50], f2 = [tx, ry + 290, 300, 50];
+    g.fillStyle = C.ink; txt('答', tx, ry + 225, 26, C.ink); txt('（続き）', tx + 320, ry + 315, 22, '#8a8578');
+    g.strokeStyle = C.ink; g.lineWidth = 2; g.strokeRect(...f1); g.strokeRect(...f2);
+    txt('行の終わりで切れる→', tx + 20, ry + 390, 20, '#8a8578');
+    const ans = '二酸化炭素を取り込み、酸素を出す。';
+    const n = Math.floor(ans.length * prog(v, L[3], L[3] + .12));
+    const a1 = ans.slice(0, Math.min(n, 9)), a2 = n > 9 ? ans.slice(9, n) : '';
+    txt(a1, f1[0] + 10, f1[1] + 27, 28, '#c0392b');
+    txt(a2, f2[0] + 10, f2[1] + 27, 28, '#c0392b');
+    const k = prog(v, L[2] + .05, L[2] + .12);
+    if (k > 0) {
+      g.save(); g.globalAlpha = k; g.strokeStyle = C.blue; g.lineWidth = 4; g.setLineDash([8, 6]);
+      g.beginPath(); g.moveTo(f1[0] + f1[2], f1[1] + 25); g.bezierCurveTo(f1[0] + f1[2] + 50, f1[1] + 70, f2[0] - 50, f2[1] - 30, f2[0], f2[1] + 25); g.stroke(); g.restore();
+    }
+    appear(prog(v, L[3] + .12, L[3] + .17), () => {
+      check(rx + 70, ry + 500, 24, prog(v, L[3] + .12, L[3] + .2));
+      txt('2つの枠を1つの欄として扱い、', rx + 110, ry + 490, 24, C.text);
+      txt('入りきらない分は「続き」へ流す', rx + 110, ry + 528, 24, C.text);
+    });
+  });
+};
+
+function terminal(lines, v0, v1, v, x, y, w, h, title) {
+  win(x, y, w, h, title, '#191816');
+  const n = lines.length;
+  lines.forEach((ln, i) => {
+    const k = prog(v, lerp(v0, v1, i / n), lerp(v0, v1, i / n) + .025);
+    if (k <= 0) return;
+    const yy = y + 90 + i * 44;
+    const [kind, s] = ln;
+    const col = kind === '$' ? C.text : kind === 'x' ? C.red : kind === 'o' ? C.green : kind === '!' ? C.yellow : C.dim;
+    const pre = kind === '$' ? '$ ' : kind === 'x' ? '✗ ' : kind === 'o' ? '✓ ' : kind === '!' ? '⚠ ' : '→ ';
+    const shown = (pre + s).slice(0, Math.ceil((pre + s).length * clamp(k * 1.2)));
+    txt(shown, x + 34, yy, 25, col, 'left', MONO, kind === '$' ? '700' : '400');
+  });
+}
+
+V.s05 = (v, L) => {
+  const lines = [
+    ['$', 'python で describe.ts を書き換え'],
+    ['x', '改行の記号が本物の改行になった'],
+    ['o', 'Edit で該当行を直す'],
+    ['$', 'python - <<EOF … answerFields.ts'],
+    ['x', 'シェルがスクリプトを読めない'],
+    ['-', 'git diff --stat → ファイルは無傷'],
+    ['o', 'Edit ツールで1か所ずつ修正（8回）'],
+    ['$', 'npx tsc -b && npx vitest run'],
+    ['o', '型チェック OK・テスト 87件 OK'],
+    ['!', 'console: Konva の touchend でエラー'],
+    ['-', '偽の touchend には指の座標が無いだけ'],
+    ['o', 'アプリのコードは正常と判断'],
+  ];
+  appear(prog(v, 0, .05), () => terminal(lines, .03, .95, v, SX, SY - 10, SW, 640, 'Claude Code — 文字入れさん'));
+};
+
+V.s06 = (v, L) => {
+  const y0 = SY + 150, y1 = SY + 330;
+  const cx = (i) => SX + 80 + i * 150;
+  const k0 = prog(v, 0, .06);
+  appear(k0, () => {
+    txt('GitHub（origin/main）', SX + 20, SY + 40, 28, C.dim);
+    // main の線
+    g.strokeStyle = C.dim; g.lineWidth = 8; g.beginPath(); g.moveTo(cx(0), y0); g.lineTo(cx(2), y0); g.stroke();
+    [0, 1, 2].forEach((i) => { g.beginPath(); g.arc(cx(i), y0, 20, 0, 7); g.fillStyle = C.dim; g.fill(); });
+  });
+  // 先に入った2件
+  const kp = prog(v, .04, .14);
+  [['#3 ページの並べ替え', 3], ['#4 回答欄の文字サイズ', 4]].forEach(([s, i], j) => {
+    const k = prog(kp, j * .5, j * .5 + .5);
+    if (k <= 0) return;
+    g.strokeStyle = C.purple; g.lineWidth = 8; g.beginPath(); g.moveTo(cx(i - 1), y0); g.lineTo(lerp(cx(i - 1), cx(i), eo(k)), y0); g.stroke();
+    pop(k, cx(i), y0, () => { g.beginPath(); g.arc(cx(i), y0, 22, 0, 7); g.fillStyle = C.purple; g.fill(); txt(s, cx(i), y0 - 50 - j * 40, 22, C.purple, 'center'); });
+  });
+  // 自分のコミット
+  const mine = prog(v, .02, .08);
+  const reb = eio(prog(v, L[1] + .02, L[2] + .05));
+  const mxA = cx(3), myA = y1, mxB = cx(5), myB = y0;
+  const mx = lerp(mxA, mxB, reb), my = lerp(myA, myB, reb);
+  appear(mine, () => {
+    g.strokeStyle = C.orange; g.lineWidth = 8; g.beginPath();
+    const fromX = reb < .5 ? cx(2) : cx(4); g.moveTo(fromX, y0); g.quadraticCurveTo(fromX + 30, my, mx, my); g.stroke();
+    g.beginPath(); g.arc(mx, my, 24, 0, 7); g.fillStyle = C.orange; g.fill();
+    txt('わたしの変更（改行された回答欄＋ダブルタップ）', mx - (reb > .5 ? 260 : 0), my + 60, 24, C.orange2, reb > .5 ? 'left' : 'center');
+  });
+  // push 失敗
+  const rej = prog(v, .1, .18);
+  if (v < L[1] + .05) appear(rej, () => {
+    rr(SX + 760, SY + 280, 420, 100, 20, C.red + '33', C.red, 3);
+    txt('git push → rejected', SX + 970, SY + 330, 32, C.red, 'center', MONO);
+  });
+  // 衝突の解消
+  appear(prog(v, L[1] + .05, L[1] + .12), () => {
+    const x = SX + 20, y = SY + 430;
+    win(x, y, 700, 260, 'autoFields.ts（衝突）', '#191816');
+    const res = prog(v, L[2] + .05, L[2] + .15);
+    g.save(); g.globalAlpha *= 1 - res;
+    txt('<<<<<<< 文字の大きさのルール（#4）', x + 30, y + 90, 22, C.purple, 'left', MONO, '400');
+    txt('=======', x + 30, y + 130, 22, C.dim, 'left', MONO, '400');
+    txt('>>>>>>> 2つの欄に分ける配置（わたし）', x + 30, y + 170, 22, C.orange2, 'left', MONO, '400');
+    g.restore();
+    if (res > 0) appear(res, () => {
+      txt('textForField() に両方を合体', x + 30, y + 110, 28, C.green, 'left', MONO);
+      txt('お知らせ id 13 → 12 に付け直し', x + 30, y + 170, 24, C.green, 'left', MONO, '400');
+    });
+  });
+  appear(prog(v, L[3] - .06, L[3]), () => {
+    const x = SX + 760, y = SY + 470;
+    rr(x, y, 440, 200, 20, C.panel, C.green, 3);
+    txt('ブラウザで再確認', x + 40, y + 55, 28, C.text); check(x + 380, y + 55, 22, prog(v, L[3] - .03, L[3] + .02));
+    txt('git push', x + 40, y + 105, 28, C.text, 'left', MONO); check(x + 380, y + 105, 22, prog(v, L[3] + .03, L[3] + .08));
+    txt('GitHub Pages 公開', x + 40, y + 155, 28, C.text); check(x + 380, y + 155, 22, prog(v, L[3] + .09, L[3] + .14));
+  });
+};
+
+V.s07 = (v, L) => {
+  // iPad の入力
+  appear(prog(v, 0, .06), () => {
+    rr(SX, SY, 520, 360, 30, '#111', '#555', 4);
+    rr(SX + 24, SY + 24, 472, 312, 12, '#f2f1ec');
+    rr(SX + 50, SY + 60, 420, 70, 10, '#fff', '#bbb', 2);
+    const typed = 'じゃ'.slice(0, Math.ceil(2 * prog(v, L[1], L[1] + .06)));
+    const picked = v > L[1] + .14;
+    txt(picked ? '邪悪' : typed, SX + 70, SY + 96, 38, '#222', 'left', UI, picked ? '700' : '400');
+    if (!picked && typed) { g.fillStyle = '#222'; g.fillRect(SX + 70, SY + 118, tw(typed, 38, UI, '400'), 3); }
+    // 候補バー
+    if (v > L[1] + .05) {
+      g.fillStyle = '#d5d7dd'; g.fillRect(SX + 24, SY + 170, 472, 70);
+      ['邪悪', 'じゃあ', 'ジャム'].forEach((s, i) => {
+        const x = SX + 60 + i * 150;
+        if (i === 0 && v > L[1] + .1) rr(x - 14, SY + 180, 120, 50, 10, '#fff');
+        txt(s, x + 46, SY + 206, 30, '#222', 'center', UI, '400');
+      });
+      ripple(SX + 106, SY + 205, prog(v, L[1] + .1, L[1] + .16));
+    }
+    txt('iPad の予測変換', SX + 260, SY + 290, 26, '#666', 'center');
+  });
+  // アプリに届くもの
+  appear(prog(v, L[1] + .14, L[1] + .2), () => {
+    arrow(SX + 530, SY + 180, SX + 640, SY + 180, 1, C.dim);
+    rr(SX + 660, SY + 100, 540, 170, 20, C.panel, C.red, 3);
+    txt('アプリに届く読み：「じゃ」', SX + 690, SY + 150, 30, C.text);
+    txt('→ 2文字と数えてしまう', SX + 690, SY + 210, 30, C.red);
+    cross(SX + 1150, SY + 150, 24, prog(v, L[1] + .18, L[1] + .24));
+  });
+  // 辞書
+  appear(prog(v, L[2], L[2] + .06), () => {
+    const x = SX, y = SY + 410;
+    rr(x, y, 520, 260, 20, C.panel, C.yellow, 3);
+    txt('📖 読みの辞書（約2MB）', x + 30, y + 50, 30, C.yellow);
+    txt('邪悪 → じゃあく', x + 50, y + 115, 32, C.text, 'left', MONO);
+    txt('邪   → じゃ / よこしま', x + 50, y + 165, 26, C.dim, 'left', MONO, '400');
+    txt('文字入力を開いたときだけ読み込む', x + 30, y + 220, 22, C.dim);
+  });
+  appear(prog(v, L[2] + .1, L[2] + .16), () => {
+    arrow(SX + 530, SY + 540, SX + 640, SY + 540, 1, C.dim);
+    rr(SX + 660, SY + 410, 540, 260, 20, C.panel, C.green, 3);
+    txt('「じゃ」で始まる読みを選ぶ', SX + 690, SY + 460, 28, C.text);
+    txt('じゃ ＋ あく ＝ じゃあく', SX + 690, SY + 520, 32, C.green, 'left', MONO);
+    const k = prog(v, L[3], L[3] + .08);
+    pop(k, SX + 930, SY + 610, () => chip('4文字（表記 2文字）', SX + 930, SY + 610, 34, C.green, C.bg, 'center'));
+  });
+};
+
+V.s08 = (v, L, lt) => {
+  // 左：白い PDF
+  const x = SX, y = SY;
+  appear(prog(v, 0, .06), () => {
+    rr(x, y, 590, 660, 24, C.panel, C.line, 2);
+    txt('PDF が白くなる', x + 30, y + 50, 30, C.yellow);
+    const fixed = prog(v, L[2], L[2] + .1);
+    const px = x + 40, py = y + 100;
+    g.fillStyle = C.paper; g.fillRect(px, py, 220, 300);
+    if (fixed > 0) {
+      g.save(); g.globalAlpha = fixed; g.fillStyle = '#5b574d';
+      txt('第3章 関数', px + 20, py + 34, 22, C.ink);
+      for (let i = 0; i < 7; i++) g.fillRect(px + 20, py + 70 + i * 30, i % 3 === 2 ? 110 : 180, 8);
+      g.restore();
+    } else txt('（まっ白）', px + 110, py + 150, 24, '#b8b2a4', 'center');
+    if (fixed > .5) check(px + 200, py + 280, 26, fixed);
+    const items = [['pdf.js 5 は', C.dim], ['日本語フォントの CMap', C.text], ['標準フォント・wasm を', C.text], ['別ファイルから読む', C.text]];
+    items.forEach(([s, c], i) => appear(prog(v, L[0] + .08 + i * .03, L[0] + .12 + i * .03), () => txt(s, x + 290, y + 140 + i * 44, 24, c)));
+    appear(prog(v, L[2], L[2] + .06), () => {
+      rr(x + 40, y + 440, 510, 160, 16, '#191816');
+      txt('public/pdfjs/ にコピー', x + 70, y + 490, 26, C.green, 'left', MONO);
+      txt('getDocument({ cMapUrl, … })', x + 70, y + 545, 24, C.text, 'left', MONO, '400');
+    });
+  });
+  // 右：ページ番号で並べ替え
+  const rx = SX + 630;
+  appear(prog(v, L[3] - .03, L[3] + .03), () => {
+    rr(rx, y, 590, 660, 24, C.panel, C.line, 2);
+    txt('ページ番号で並べ替え', rx + 30, y + 50, 30, C.yellow);
+    const nums = [['- 3 -', 3], ['p.1', 1], ['2 / 3', 2]];
+    const sortK = eio(prog(v, L[3] + .1, L[3] + .17));
+    nums.forEach(([s, n], i) => {
+      const fromX = rx + 40 + i * 180, toX = rx + 40 + (n - 1) * 180;
+      const px = lerp(fromX, toX, sortK), py = y + 130 - Math.sin(sortK * Math.PI) * 40 * (n === 2 ? 0 : 1);
+      g.save(); g.translate(px + 80, py + 130); g.rotate((i - 1) * .04 * (1 - sortK)); g.translate(-px - 80, -py - 130);
+      g.fillStyle = C.paper; g.fillRect(px, py, 160, 240);
+      g.fillStyle = '#cfc9bb'; for (let j = 0; j < 6; j++) g.fillRect(px + 16, py + 24 + j * 28, j % 2 ? 90 : 128, 6);
+      txt(s, px + 80, py + 220, 22, C.ink, 'center', MONO);
+      g.restore();
+    });
+    // 読み取りの線
+    const sc = prog(v, L[3] + .02, L[3] + .09);
+    if (sc > 0 && sc < 1) {
+      g.fillStyle = 'rgba(124,196,127,.35)'; g.fillRect(rx + 30, y + 330 + 10, 540 * sc, 40);
+      g.fillStyle = C.green; g.fillRect(rx + 30 + 540 * sc, y + 325, 4, 70);
+    }
+    appear(prog(v, L[3] + .03, L[3] + .07), () => txt('上下の余白の番号を読み取る（Tesseract.js）', rx + 40, y + 440, 24, C.green));
+    appear(prog(v, L[3] + .17, L[3] + .21), () => {
+      txt('番号のないページ → 直前のページの後ろ', rx + 40, y + 520, 24, C.text);
+      txt('PDF は並べ替えない ／「元に戻す」で戻せる', rx + 40, y + 570, 24, C.dim);
+    });
+  });
+};
+
+V.s09 = (v, L) => {
+  // 仮説
+  appear(prog(v, .02, .08), () => {
+    rr(SX, SY, 460, 150, 24, C.panel, C.line, 2);
+    txt('最初の見当', SX + 30, SY + 40, 24, C.dim);
+    txt('「PWA のせい？」', SX + 30, SY + 100, 40, C.text);
+    const k = prog(v, L[1], L[1] + .06);
+    if (k > 0) { g.strokeStyle = C.red; g.lineWidth = 7; g.beginPath(); g.moveTo(SX + 30, SY + 100); g.lineTo(SX + 30 + 330 * eo(k), SY + 100); g.stroke(); }
+  });
+  // 差分
+  appear(prog(v, L[1] + .05, L[1] + .12), () => {
+    const x = SX + 500, y = SY;
+    win(x, y, 720, 400, 'TextInputModal.tsx', '#191816');
+    const rows = [[' ', '<textarea'], ['-', '  autoCorrect="off"'], ['-', '  spellCheck={false}'], ['+', '  autoComplete="off"'], [' ', '/>']];
+    rows.forEach(([m, s], i) => {
+      const yy = y + 100 + i * 56;
+      const k = m === '+' ? prog(v, L[3] - .05, L[3]) : m === '-' ? prog(v, L[2] - .05, L[2] + .05) : 1;
+      if (m !== ' ' && k <= 0) { txt('  ' + s.trim(), x + 70, yy, 28, C.text, 'left', MONO, '400'); return; }
+      if (m === '-') { g.fillStyle = `rgba(228,106,106,${.25 * k})`; g.fillRect(x + 20, yy - 24, 680, 48); }
+      if (m === '+') { g.save(); g.globalAlpha = k; g.fillStyle = 'rgba(124,196,127,.25)'; g.fillRect(x + 20, yy - 24, 680, 48); g.restore(); if (k <= 0) return; }
+      g.save(); if (m === '+') g.globalAlpha = k;
+      txt(m, x + 40, yy, 28, m === '-' ? C.red : m === '+' ? C.green : C.dim, 'left', MONO);
+      txt(s, x + 70, yy, 28, m === '-' && k > .5 ? C.red : m === '+' ? C.green : C.text, 'left', MONO, '400');
+      g.restore();
+    });
+  });
+  // キーボードの候補バーが出る
+  appear(prog(v, L[2] + .08, L[2] + .14), () => {
+    const x = SX, y = SY + 190;
+    rr(x, y, 460, 210, 24, '#111', '#555', 3);
+    g.fillStyle = '#d5d7dd'; g.fillRect(x + 16, y + 20, 428, 60);
+    const ok = v > L[3] - .02;
+    if (ok) ['文字', '問題', '答え'].forEach((s, i) => txt(s, x + 90 + i * 140, y + 50, 28, '#222', 'center', UI, '400'));
+    else txt('（候補が出ない）', x + 230, y + 50, 24, '#888', 'center');
+    g.fillStyle = '#c4c7ce'; for (let r = 0; r < 3; r++) for (let c = 0; c < 9; c++) rr(x + 24 + c * 47, y + 95 + r * 36, 40, 30, 5, '#eceef2');
+    if (ok) check(x + 420, y + 30, 22, prog(v, L[3] - .02, L[3] + .05));
+  });
+  // チェックリスト
+  const items = ['ほかの更新を取り込む（rebase）', 'npm ci', 'テスト 166件', 'ビルド', 'GitHub Pages に公開'];
+  items.forEach((s, i) => {
+    const a = L[3] + .02 + i * .035;
+    appear(prog(v, a, a + .04), () => {
+      const x = SX + 520, y = SY + 450 + i * 54;
+      check(x + 20, y, 20, prog(v, a, a + .05)); txt(s, x + 52, y + 1, 26, C.text);
+    });
+  });
+};
+
+V.s10 = (v, L) => {
+  appear(prog(v, 0, .06), () => {
+    rr(SX, SY, 640, 70, 16, C.panel);
+    txt('Webアプリを「キーボード」として追加できる？', SX + 30, SY + 36, 28, C.text);
+  });
+  const rows = [['iPhone / iPad', '✕', 'ネイティブアプリの拡張機能だけ'], ['Android', '✕', 'ネイティブの入力方式だけ'], ['Windows / Mac', '✕', 'OS の入力方式はネイティブ'], ['Chromebook', '△', 'Chrome 拡張機能なら']];
+  rows.forEach(([a, m, b], i) => {
+    const k = prog(v, L[1] + i * .05, L[1] + i * .05 + .05);
+    appear(k, () => {
+      const y = SY + 110 + i * 86;
+      rr(SX, y, 640, 72, 14, i % 2 ? '#2a2825' : C.panel);
+      txt(a, SX + 30, y + 37, 28, C.text);
+      if (m === '✕') cross(SX + 290, y + 36, 22, k); else chip('△', SX + 290, y + 36, 24, C.yellow, C.bg, 'center');
+      txt(b, SX + 330, y + 37, 22, C.dim);
+    });
+  });
+  appear(prog(v, L[2], L[2] + .06), () => chip('できないことは正直に伝える', SX + 320, SY + 500, 30, C.orange2, C.bg, 'center'));
+  // 代わりの形
+  const flow = [['アプリ内の', '数式キーボード', C.blue], ['コピー', 'LaTeX・画像', C.yellow], ['貼り付け', 'Word・Slack など', C.green]];
+  flow.forEach(([a, b, c], i) => {
+    const k = prog(v, L[3] + i * .06, L[3] + i * .06 + .05);
+    appear(k, () => {
+      const x = SX + 720, y = SY + 20 + i * 220;
+      rr(x, y, 480, 150, 22, C.panel, c, 3);
+      txt(a, x + 240, y + 52, 32, c, 'center'); txt(b, x + 240, y + 104, 26, C.text, 'center');
+    });
+    if (i < 2) arrow(SX + 960, SY + 178 + i * 220, SX + 960, SY + 232 + i * 220, prog(v, L[3] + i * .06 + .04, L[3] + i * .06 + .08));
+  });
+};
+
+V.s11 = (v, L) => {
+  const cards = [['1', '思い込まずに', 'コードを読んで原因を確かめる', C.blue], ['2', '小さく直して', 'テストとブラウザで確かめる', C.yellow], ['3', '試せていないことは', 'そのまま正直に伝える', C.green]];
+  cards.forEach(([n, a, b, c], i) => {
+    const k = prog(v, L[i + 1] - .02, L[i + 1] + .06);
+    appear(k, () => {
+      const y = SY + i * 165;
+      rr(SX, y, SW, 140, 26, C.panel, c, 3);
+      g.beginPath(); g.arc(SX + 80, y + 70, 42, 0, 7); g.fillStyle = c; g.fill();
+      txt(n, SX + 80, y + 72, 44, C.bg, 'center', UI, '900');
+      txt(a, SX + 160, y + 48, 30, C.dim); txt(b, SX + 160, y + 98, 42, C.text);
+    }, 40);
+  });
+  appear(prog(v, L[4], L[4] + .06), () => {
+    txt('文字入れさん', SX + SW / 2, SY + 560, 52, C.orange2, 'center', UI, '900');
+    txt('isthd.github.io/mojiire-san-/', SX + SW / 2, SY + 630, 30, C.dim, 'center', MONO, '400');
+  });
+};
+
+// キャラクターの動き（シーンごと）
+function clawdState(id, v, L, lt) {
+  const s = {};
+  switch (id) {
+    case 's00': s.armR = v < .35 ? 1 : 0; s.wave = 1; s.mood = v > .85 ? 'happy' : ''; break;
+    case 's01': s.look = 1; s.armR = v > L[2] && v < L[3] + .15 ? 1 : 0; break;
+    case 's02': s.look = 1; s.walk = v > .1 && v < .9; s.emote = v < .15 ? '!' : ''; s.emoteK = prog(v, 0, .05); break;
+    case 's03': s.prop = 'glass'; s.armR = .6; s.look = 1;
+      if (v < L[2]) { s.emote = '?'; s.emoteK = prog(v, .02, .08); } else if (v > L[3]) { s.emote = '!'; s.emoteK = prog(v, L[3], L[3] + .05); } break;
+    case 's04': s.prop = 'wrench'; s.armR = .5 + .5 * Math.max(0, Math.sin(lt * 6)) * (v > .1 && v < .9 ? 1 : 0); s.look = 1;
+      s.mood = v > .92 ? 'happy' : ''; break;
+    case 's05': s.mood = v < .55 ? 'sweat' : v > .93 ? 'happy' : ''; s.look = 1; s.lookY = .5;
+      if (v > .72 && v < .85) { s.emote = '?'; s.emoteK = prog(v, .72, .76); } if (v >= .85 && v < .93) { s.emote = '!'; s.emoteK = prog(v, .85, .88); } break;
+    case 's06': s.mood = v > .1 && v < L[1] + .05 ? 'sweat' : v > L[3] + .2 ? 'happy' : ''; s.look = 1;
+      if (v > .1 && v < L[1]) { s.emote = '!'; s.emoteK = prog(v, .1, .14); } break;
+    case 's07': s.look = 1; s.prop = v > L[2] ? 'glass' : ''; s.armR = v > L[2] ? .6 : 0;
+      if (v > L[1] + .14 && v < L[2]) { s.emote = '?'; s.emoteK = prog(v, L[1] + .14, L[1] + .18); }
+      s.mood = v > L[3] + .05 ? 'happy' : ''; break;
+    case 's08': s.look = 1; s.prop = 'wrench'; s.armR = .5; s.mood = (v > L[2] + .1 && v < L[3]) || v > .95 ? 'happy' : ''; break;
+    case 's09': s.look = 1; if (v < L[1]) { s.emote = '?'; s.emoteK = prog(v, .02, .06); } else if (v < L[2] + .05) { s.emote = '!'; s.emoteK = prog(v, L[1], L[1] + .04); }
+      s.mood = v > L[3] + .2 ? 'happy' : ''; break;
+    case 's10': s.look = 1; if (v > L[1] && v < L[2]) s.mood = 'sweat'; if (v > L[3]) { s.emote = '✓'; s.emoteK = prog(v, L[3], L[3] + .05); } break;
+    case 's11': s.prop = v > L[4] ? 'flag' : ''; s.armR = v > L[4] ? 1 : 0; s.armL = v > L[4] ? 1 : 0; s.mood = v > L[4] ? 'happy' : ''; s.jump = v > L[4] + .05 ? .6 : 0; break;
+  }
+  return s;
+}
+
+// 字幕の折り返し
+function wrapLine(s, size, maxW) {
+  if (tw(s, size) <= maxW) return [s];
+  // 句読点・スペースのあたりで2行に分ける
+  let best = Math.floor(s.length / 2), bestScore = 1e9;
+  for (let i = 4; i < s.length - 4; i++) {
+    const a = s.slice(0, i), b = s.slice(i);
+    if (tw(a, size) > maxW || tw(b, size) > maxW) continue;
+    const brk = '、。，」）) '.includes(s[i - 1]) ? 0 : 400;
+    const sc = Math.abs(tw(a, size) - tw(b, size)) + brk;
+    if (sc < bestScore) { bestScore = sc; best = i; }
+  }
+  return [s.slice(0, best), s.slice(best)];
+}
+
+function drawBg(t) {
+  g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+  g.fillStyle = 'rgba(255,255,255,.035)';
+  for (let x = 30; x < W; x += 60) for (let y = 30; y < H; y += 60) g.fillRect(x - 1.5, y - 1.5, 3, 3);
+  const gr = g.createRadialGradient(W / 2, H / 2, 300, W / 2, H / 2, 1200);
+  gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,.45)');
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+}
+
+window.frame = (t, amp) => {
+  drawBg(t);
+  let si = TL.length - 1;
+  for (let i = 0; i < TL.length; i++) if (t < TL[i].start + TL[i].dur) { si = i; break; }
+  const S = TL[si], lt = t - S.start;
+  const v = clamp((lt - S.voice) / S.adur), L = S.lineStarts;
+  // 上のタイトル
+  if (S.id !== 's00') {
+    const k = prog(lt, 0, .5);
+    appear(k, () => {
+      let x = 64;
+      if (S.date) x += chip(S.date, x, 78, 28, C.orange) + 20;
+      txt(S.title, x, 80, 46, C.text, 'left', UI, '900');
+      txt(`${si} / ${TL.length - 1}`, W - 64, 80, 28, C.dim, 'right');
+    }, -10);
+    g.fillStyle = C.line; g.fillRect(64, 126, W - 128, 2);
+  }
+  // ステージ（入りと出のフェード）
+  const fin = prog(lt, 0, .45), fout = 1 - prog(lt, S.dur - .35, S.dur);
+  g.save(); g.globalAlpha = Math.min(fin, fout); g.translate(0, (1 - eo(fin)) * 20);
+  V[S.id](v, L, lt);
+  g.restore();
+  // キャラクター
+  const st = Object.assign({ t, amp }, clawdState(S.id, v, L, lt));
+  clawd(330, 830, 26, st);
+  // 字幕
+  const bx = 60, by = 892, bw = W - 120, bh = 150;
+  rr(bx, by, bw, bh, 26, 'rgba(15,14,13,.88)', C.line, 2);
+  // しっぽ（キャラクターから）
+  g.fillStyle = 'rgba(15,14,13,.88)'; g.beginPath(); g.moveTo(300, by + 1); g.lineTo(330, by - 26); g.lineTo(360, by + 1); g.fill();
+  let li = -1; L.forEach((a, i) => { if (v >= a && lt >= S.voice) li = i; });
+  if (lt > S.voice + S.adur + .5) li = -1;
+  if (li >= 0) {
+    const lines = wrapLine(S.subs[li], 38, bw - 80);
+    const k = clamp((v - L[li]) * S.adur / .18);
+    g.save(); g.globalAlpha = k;
+    lines.forEach((s, i) => txt(s, bx + 40, by + bh / 2 + (i - (lines.length - 1) / 2) * 54, 38, C.text, 'left', UI, '700'));
+    g.restore();
+  }
+  // 全体の進み
+  g.fillStyle = C.line; g.fillRect(0, H - 6, W, 6);
+  g.fillStyle = C.orange; g.fillRect(0, H - 6, W * t / TOTAL, 6);
+  return cv.toDataURL('image/jpeg', 0.92);
+};
+
+window.ready = async () => {
+  await document.fonts.load(`700 40px "BIZ UDPGothic"`); await document.fonts.load(`900 40px "BIZ UDPGothic"`);
+  await document.fonts.load(`400 40px "BIZ UDGothic"`); await document.fonts.load(`700 40px "BIZ UDGothic"`);
+  return true;
+};
+</script></body></html>
