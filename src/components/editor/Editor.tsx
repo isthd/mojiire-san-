@@ -147,8 +147,8 @@ export function Editor({ projectId, onHome }: { projectId: string; onHome: () =>
               </div>
             )}
           </div>
-          {pageCount > 1 && <PageStrip onAddImages={openAddPage} />}
-          <BottomBar onAddImages={openAddPage} />
+          {pageCount > 1 && <PageStrip />}
+          <BottomBar onAddImages={openAddPage} joined={pageCount > 1} />
         </main>
       </div>
       <TextInputModal />

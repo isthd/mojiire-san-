@@ -770,61 +770,55 @@ function RuledBar() {
 
 function IdleBar({ onAddImages }: { onAddImages: () => void }) {
   const setTool = useEditor((s) => s.setTool);
+  const tool = 'tap flex h-12 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1.5 text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900';
+  const label = 'text-[11px] font-medium whitespace-nowrap';
   return (
-    <div className="relative flex h-[76px] items-center justify-between px-4">
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => setTool('pen')}
-          className="tap flex h-12 flex-col items-center justify-center rounded-xl px-2.5 text-neutral-700 hover:bg-neutral-100"
-        >
-          <Pen size={22} aria-hidden />
-          <span className="text-[11px] font-medium">描く・図形</span>
-        </button>
-        <button
-          type="button"
-          title="画像の回答欄を探して文字枠を自動で置く"
-          aria-label="回答欄に文字枠を自動で置く"
-          onClick={() => void autoPlaceAnswerFields()}
-          className="tap flex h-12 flex-col items-center justify-center rounded-xl px-2.5 text-neutral-700 hover:bg-neutral-100"
-        >
-          <ScanText size={22} aria-hidden />
-          <span className="text-[11px] font-medium">回答欄</span>
-        </button>
-      </div>
+    <div className="grid h-[72px] grid-cols-[1fr_1fr_auto_1fr_1fr] items-center justify-items-center px-3">
+      <button type="button" onClick={() => setTool('pen')} className={tool}>
+        <Pen size={22} aria-hidden />
+        <span className={label}>
+          描く<span className="hidden min-[400px]:inline">・図形</span>
+        </span>
+      </button>
+      <button
+        type="button"
+        title="画像の回答欄を探して文字枠を自動で置く"
+        aria-label="回答欄に文字枠を自動で置く"
+        onClick={() => void autoPlaceAnswerFields()}
+        className={tool}
+      >
+        <ScanText size={22} aria-hidden />
+        <span className={label}>回答欄</span>
+      </button>
       <button
         type="button"
         aria-label="文字を追加"
         title="文字を追加"
         onClick={addTextAtCenter}
-        className="tap absolute left-1/2 flex h-14 w-14 -translate-x-1/2 items-center justify-center rounded-full border-[2.5px] border-[#2f9be8] text-[#2f9be8] transition hover:bg-[#2f9be8]/10 active:scale-95"
+        className="tap mx-2 flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[#2f9be8] text-white shadow-[0_6px_16px_rgba(47,155,232,0.4)] transition hover:bg-[#2489d4] active:scale-95"
       >
-        <Plus size={30} strokeWidth={2.4} />
+        <Plus size={28} strokeWidth={2.6} />
       </button>
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          title="便箋・ノートの罫線に合わせて文字を書く枠を置く"
-          onClick={() => setTool('ruled')}
-          className="tap flex h-12 flex-col items-center justify-center rounded-xl px-2.5 text-neutral-700 hover:bg-neutral-100"
-        >
-          <LetterPaper size={22} aria-hidden />
-          <span className="text-[11px] font-medium">便箋</span>
-        </button>
-        <button
-          type="button"
-          onClick={onAddImages}
-          className="tap flex h-12 flex-col items-center justify-center rounded-xl px-2.5 text-neutral-700 hover:bg-neutral-100"
-        >
-          <ImagePlus size={22} aria-hidden />
-          <span className="text-[11px] font-medium">ページを追加</span>
-        </button>
-      </div>
+      <button
+        type="button"
+        title="便箋・ノートの罫線に合わせて文字を書く枠を置く"
+        onClick={() => setTool('ruled')}
+        className={tool}
+      >
+        <LetterPaper size={22} aria-hidden />
+        <span className={label}>便箋</span>
+      </button>
+      <button type="button" onClick={onAddImages} className={tool}>
+        <ImagePlus size={22} aria-hidden />
+        <span className={label}>
+          <span className="hidden min-[400px]:inline">ページ</span>追加
+        </span>
+      </button>
     </div>
   );
 }
 
-export function BottomBar({ onAddImages }: { onAddImages: () => void }) {
+export function BottomBar({ onAddImages, joined = false }: { onAddImages: () => void; joined?: boolean }) {
   const tool = useEditor((s) => s.tool);
   const objs = useEditor(useShallow((s) => selectedObjects(s)));
   const hasPages = useEditor((s) => s.history.present.pages.length > 0);
@@ -839,7 +833,8 @@ export function BottomBar({ onAddImages }: { onAddImages: () => void }) {
 
   return (
     <div
-      className="z-10 shrink-0 border-t border-neutral-200 bg-white"
+      // ページ一覧の帯があるときは、帯と1枚の面に見えるよう境界線を付けない
+      className={cx('z-10 shrink-0 bg-white', !joined && 'border-t border-neutral-200')}
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <div className="mx-auto w-full max-w-3xl">{body}</div>

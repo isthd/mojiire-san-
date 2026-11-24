@@ -1,11 +1,11 @@
 // ページ一覧（複数画像をページ単位で管理）
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ListOrdered, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Ellipsis, ListOrdered, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { getImageUrl, loadPageImage } from '../../storage/imageCache';
 import { useEditor } from '../../store/editorStore';
 import type { Page } from '../../types/model';
-import { ConfirmDialog, cx, IconButton } from '../ui/primitives';
+import { ConfirmDialog, cx, IconButton, MenuPopover } from '../ui/primitives';
 import { sortProjectPagesByNumber } from './addImages';
 
 function Thumb({ page }: { page: Page }) {
@@ -26,7 +26,7 @@ function Thumb({ page }: { page: Page }) {
   );
 }
 
-export function PageStrip({ onAddImages }: { onAddImages: () => void }) {
+export function PageStrip() {
   const pages = useEditor((s) => s.history.present.pages);
   const currentId = useEditor((s) => s.currentPageId);
   const setCurrentPage = useEditor((s) => s.setCurrentPage);
@@ -35,100 +35,139 @@ export function PageStrip({ onAddImages }: { onAddImages: () => void }) {
   // 縦が短い画面（スマホ横向きなど）ではキャンバスを広く取るため最初は閉じておく
   const [open, setOpen] = useState(() => window.innerHeight >= 640);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [menu, setMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const drag = usePageDrag(pages, movePageTo);
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e: PointerEvent) => {
+      const t = e.target as HTMLElement;
+      if (!menuRef.current?.contains(t) && !t.closest('[data-menu]')) setMenu(false);
+    };
+    window.addEventListener('pointerdown', close);
+    return () => window.removeEventListener('pointerdown', close);
+  }, [menu]);
+
   if (pages.length === 0) return null;
   const idx = pages.findIndex((p) => p.id === currentId);
   // ドラッグ中は移動先の並びで表示する
   const shown = drag.state ? previewOrder(pages, drag.state.id, drag.state.over) : pages;
+  const count = (
+    <span className="min-w-[30px] shrink-0 text-center text-[12px] font-bold text-neutral-500 tabular-nums">
+      {idx + 1}/{pages.length}
+    </span>
+  );
+
+  const menuItems: { label: string; icon: ReactNode; danger?: boolean; action: () => void }[] = [
+    {
+      label: '番号順に並べる',
+      icon: <ListOrdered size={17} aria-hidden />,
+      action: () => void sortProjectPagesByNumber(),
+    },
+    { label: '一覧をたたむ', icon: <ChevronDown size={17} aria-hidden />, action: () => setOpen(false) },
+    {
+      label: 'このページを削除',
+      icon: <Trash2 size={17} aria-hidden />,
+      danger: true,
+      action: () => currentId && setConfirmId(currentId),
+    },
+  ];
 
   return (
-    <div className="z-10 select-none border-t border-neutral-200 bg-white/95 backdrop-blur [-webkit-touch-callout:none]">
-      <div className="flex h-10 items-center gap-1 px-2">
-        <IconButton label={open ? 'ページ一覧を閉じる' : 'ページ一覧を開く'} onClick={() => setOpen(!open)} className="h-9 w-9">
-          {open ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
-        </IconButton>
-        <span className="text-[13px] font-medium text-neutral-600 tabular-nums">
-          ページ {idx + 1} / {pages.length}
-        </span>
-        <div className="flex-1" />
-        {pages.length >= 2 && (
-          <button
-            type="button"
-            onClick={() => void sortProjectPagesByNumber()}
-            title="プリントに印刷されたページ番号を読み取って、番号の順に並べ替えます"
-            className="flex h-8 items-center gap-1 rounded-lg px-2 text-[13px] font-medium text-[#0a84ff] hover:bg-[#0a84ff]/10"
+    <div className="z-10 select-none border-t border-neutral-200 bg-white [-webkit-touch-callout:none]">
+      {open ? (
+        <div className="flex items-center gap-1 pt-1.5 pr-1.5 pl-2">
+          {count}
+          <div
+            ref={drag.containerRef}
+            onContextMenu={(e) => e.preventDefault()}
+            className="no-scrollbar flex min-w-0 flex-1 items-center gap-2.5 overflow-x-auto px-1.5 py-2 [mask-image:linear-gradient(90deg,#000_calc(100%-20px),transparent)]"
           >
-            <ListOrdered size={16} />
-            <span className="hidden min-[380px]:inline">番号順に並べる</span>
-            <span className="min-[380px]:hidden">番号順</span>
-          </button>
-        )}
-        <IconButton label="前のページ" disabled={idx <= 0} onClick={() => setCurrentPage(pages[idx - 1].id)} className="h-9 w-9">
-          <ChevronLeft size={18} />
-        </IconButton>
-        <IconButton label="次のページ" disabled={idx >= pages.length - 1} onClick={() => setCurrentPage(pages[idx + 1].id)} className="h-9 w-9">
-          <ChevronRight size={18} />
-        </IconButton>
-      </div>
-      {open && (
-        <div
-          ref={drag.containerRef}
-          onContextMenu={(e) => e.preventDefault()}
-          className="no-scrollbar flex h-[92px] items-center gap-2 overflow-x-auto px-3 pb-2"
-        >
-          {shown.map((p, i) => {
-            const dragging = drag.state?.id === p.id;
-            const active = p.id === currentId && !drag.state;
-            return (
-              <div
-                key={p.id}
-                onPointerDown={(e) => drag.onPointerDown(e, p.id)}
-                title="長押ししてドラッグすると並べ替えできます"
-                className={cx('group relative shrink-0 transition-opacity', dragging && 'opacity-30')}
-              >
-                <button
-                  type="button"
-                  onClick={() => !drag.consumeClick() && setCurrentPage(p.id)}
-                  aria-label={`ページ ${i + 1}`}
-                  aria-current={active}
-                  className={cx(
-                    'block h-[76px] w-[60px] overflow-hidden rounded-lg bg-neutral-100 ring-offset-2 transition',
-                    active ? 'ring-[3px] ring-[#0a84ff]' : 'ring-1 ring-neutral-300 hover:ring-neutral-400',
-                  )}
+            {shown.map((p, i) => {
+              const dragging = drag.state?.id === p.id;
+              const active = p.id === currentId && !drag.state;
+              return (
+                <div
+                  key={p.id}
+                  data-thumb
+                  onPointerDown={(e) => drag.onPointerDown(e, p.id)}
+                  title="長押ししてドラッグすると並べ替えできます"
+                  className={cx('relative shrink-0 transition-opacity', dragging && 'opacity-30')}
                 >
-                  <Thumb page={p} />
-                </button>
-                <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[10px] font-medium text-white tabular-nums">{i + 1}</span>
-                {active && (
-                  <div data-no-drag className="absolute -top-1 -right-1 flex flex-col gap-0.5">
-                    <button
-                      type="button"
-                      aria-label="このページを削除"
-                      title="このページを削除"
-                      onClick={() => setConfirmId(p.id)}
-                      className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-[#ff3b30] shadow ring-1 ring-neutral-200"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          <button
-            type="button"
-            onClick={onAddImages}
-            aria-label="ページを追加"
-            className="flex h-[76px] w-[60px] shrink-0 flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-neutral-300 text-neutral-500 hover:border-[#0a84ff] hover:text-[#0a84ff]"
-          >
-            <Plus size={20} />
-            <span className="text-[10px]">追加</span>
-          </button>
+                  <button
+                    type="button"
+                    onClick={() => !drag.consumeClick() && setCurrentPage(p.id)}
+                    aria-label={`ページ ${i + 1}`}
+                    aria-current={active}
+                    className={cx(
+                      'block h-10 w-14 overflow-hidden rounded-md bg-neutral-100 transition sm:h-[46px] sm:w-16',
+                      active
+                        ? 'outline-2 outline-offset-2 outline-[#0a84ff]'
+                        : 'outline-1 outline-offset-0 outline-neutral-200 hover:outline-neutral-400',
+                    )}
+                  >
+                    <Thumb page={p} />
+                  </button>
+                  <span
+                    className={cx(
+                      'pointer-events-none absolute bottom-[3px] left-[3px] rounded px-1 text-[10px] leading-[15px] font-bold tabular-nums shadow-sm',
+                      active ? 'bg-[#0a84ff] text-white' : 'bg-white/95 text-neutral-800',
+                    )}
+                  >
+                    {i + 1}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <div ref={menuRef} className="relative shrink-0">
+            <IconButton label="ページの操作" onClick={() => setMenu(!menu)} aria-expanded={menu} className="h-9 w-9 text-neutral-500">
+              <Ellipsis size={20} />
+            </IconButton>
+            {menu && (
+              <MenuPopover anchor={menuRef} width={220}>
+                {menuItems.map((m) => (
+                  <button
+                    key={m.label}
+                    type="button"
+                    className={cx(
+                      'tap flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[15px] hover:bg-neutral-100',
+                      m.danger && 'mt-1 border-t border-neutral-200 pt-3 text-[#ff3b30]',
+                    )}
+                    onClick={() => {
+                      setMenu(false);
+                      m.action();
+                    }}
+                  >
+                    {m.icon}
+                    {m.label}
+                  </button>
+                ))}
+              </MenuPopover>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex h-11 items-center gap-1 px-1.5">
+          <IconButton label="ページ一覧を開く" onClick={() => setOpen(true)} className="h-9 w-9 text-neutral-500">
+            <ChevronUp size={18} />
+          </IconButton>
+          <span className="text-[13px] font-bold text-neutral-700 tabular-nums">
+            {idx + 1} / {pages.length}
+          </span>
+          <div className="flex-1" />
+          <IconButton label="前のページ" disabled={idx <= 0} onClick={() => setCurrentPage(pages[idx - 1].id)} className="h-9 w-9">
+            <ChevronLeft size={18} />
+          </IconButton>
+          <IconButton label="次のページ" disabled={idx >= pages.length - 1} onClick={() => setCurrentPage(pages[idx + 1].id)} className="h-9 w-9">
+            <ChevronRight size={18} />
+          </IconButton>
         </div>
       )}
       {drag.state && createPortal(
         <div
-          className="pointer-events-none fixed z-50 h-[76px] w-[60px] -translate-x-1/2 -translate-y-1/2 scale-110 overflow-hidden rounded-lg bg-neutral-100 shadow-xl ring-[3px] ring-[#0a84ff]"
+          className="pointer-events-none fixed z-50 h-[46px] w-16 -translate-x-1/2 -translate-y-1/2 scale-110 -rotate-2 overflow-hidden rounded-md bg-neutral-100 shadow-xl outline-2 outline-offset-2 outline-[#0a84ff]"
           style={{ left: drag.state.x, top: drag.state.y }}
         >
           {(() => {
@@ -154,8 +193,6 @@ export function PageStrip({ onAddImages }: { onAddImages: () => void }) {
 // --- ドラッグで並べ替え ---------------------------------------------------
 // マウスは少し動かすとドラッグ開始。タッチ・ペンは長押しで開始（短いスワイプは横スクロールのまま）
 
-const THUMB_STEP = 68; // サムネイル幅 60px + 間隔 8px
-const PAD_LEFT = 12; // px-3
 const LONG_PRESS_MS = 350;
 
 function previewOrder(pages: Page[], id: string, over: number): Page[] {
@@ -192,9 +229,13 @@ function usePageDrag(pages: Page[], movePageTo: (id: string, toIndex: number) =>
     const el = containerRef.current;
     const n = pagesRef.current.length;
     if (!el) return 0;
-    const rect = el.getBoundingClientRect();
-    const x = clientX - rect.left + el.scrollLeft - PAD_LEFT;
-    return Math.max(0, Math.min(n - 1, Math.floor(x / THUMB_STEP)));
+    // サムネイルの大きさは画面幅で変わるので、実際の位置から1枚ぶんの幅を測る
+    const thumbs = el.querySelectorAll<HTMLElement>('[data-thumb]');
+    if (thumbs.length === 0) return 0;
+    const first = thumbs[0].getBoundingClientRect().left;
+    const step = thumbs.length > 1 ? thumbs[1].getBoundingClientRect().left - first : thumbs[0].offsetWidth + 10;
+    const x = clientX - first;
+    return Math.max(0, Math.min(n - 1, Math.floor(x / step)));
   };
 
   // ドラッグ中はタッチでの横スクロールを止める（passive: false が必要）
