@@ -323,10 +323,9 @@ export function TextInputModal() {
             ref={ref}
             aria-label="テキストを入力"
             placeholder="ここに文字を入力"
-            // autocorrect="off" / spellcheck="false" にすると、iPad（Safari・ホーム画面のアプリ）や Android で
-            // キーボードの予測変換（候補バー）が出なくなることがあるため、どちらも指定しない
+            // autocorrect="off" / spellcheck="false" / autocomplete="off" にすると、iPad（Safari・ホーム画面のアプリ）や
+            // Android でキーボードの予測変換（候補バー）が出なくなることがあるため、どれも指定しない
             autoCapitalize="off"
-            autoComplete="off"
             tabIndex={obj ? 0 : -1}
             className="block h-full w-full resize-none overflow-auto bg-white p-4 text-neutral-900 outline-none placeholder:text-neutral-400"
             style={{

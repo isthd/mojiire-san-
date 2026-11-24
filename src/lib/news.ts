@@ -23,6 +23,14 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    id: 26,
+    date: '2026-11-24',
+    features: [],
+    fixes: [
+      '文字の入力で、iPad などのキーボードの予測変換（候補）がまた出なくなっていたのを直しました。',
+    ],
+  },
+  {
     id: 25,
     date: '2026-11-23',
     features: [
