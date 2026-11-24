@@ -795,9 +795,9 @@ function IdleBar({ onAddImages }: { onAddImages: () => void }) {
         aria-label="文字を追加"
         title="文字を追加"
         onClick={addTextAtCenter}
-        className="tap mx-2 flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[#2f9be8] text-white shadow-[0_6px_16px_rgba(47,155,232,0.4)] transition hover:bg-[#2489d4] active:scale-95"
+        className="tap mx-2 flex h-14 w-14 items-center justify-center rounded-full border-[2.5px] border-[#2f9be8] text-[#2f9be8] transition hover:bg-[#2f9be8]/10 active:scale-95"
       >
-        <Plus size={28} strokeWidth={2.6} />
+        <Plus size={30} strokeWidth={2.4} />
       </button>
       <button
         type="button"
