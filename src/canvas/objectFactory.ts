@@ -8,6 +8,7 @@ import {
   type MathObject,
   type ShapeObject,
   type StrokeObject,
+  type StyledObject,
   type TextObject,
 } from '../types/model';
 import type { ToolSettings, ToolSettingsKey } from '../store/settingsStore';
@@ -157,7 +158,7 @@ export function createShape(
 }
 
 /** オブジェクトの種類に対応するツール設定グループ */
-export function settingsKeyFor(obj: EditorObject): ToolSettingsKey {
+export function settingsKeyFor(obj: StyledObject): ToolSettingsKey {
   switch (obj.type) {
     case 'rect':
     case 'ellipse':
@@ -170,7 +171,7 @@ export function settingsKeyFor(obj: EditorObject): ToolSettingsKey {
 
 /** プロパティパネルの値（表示単位）の変更を、オブジェクトのデータ（画像px）へのパッチに変換 */
 export function objectPatchFromSettings(
-  obj: EditorObject,
+  obj: StyledObject,
   patch: Record<string, unknown>,
   unit: number,
 ): Partial<EditorObject> {
@@ -231,7 +232,7 @@ export function objectPatchFromSettings(
 }
 
 /** 「直前の設定を保持」：編集したオブジェクトの見た目をツール設定に書き戻すための値 */
-export function settingsFromObject(obj: EditorObject, unit: number): Partial<ToolSettings[ToolSettingsKey]> {
+export function settingsFromObject(obj: StyledObject, unit: number): Partial<ToolSettings[ToolSettingsKey]> {
   const u = (v: number) => round(v / unit);
   switch (obj.type) {
     case 'text':

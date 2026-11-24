@@ -2,7 +2,7 @@
 import { renderThumbnail } from '../export/renderPage';
 import { countWrittenPages, pickExtraMeta, readExtraMeta, type ExtraMeta } from '../lib/homeList';
 import { uid } from '../lib/id';
-import type { ProjectDoc, ProjectMeta } from '../types/model';
+import { pageImageIds, remapPageImages, type ProjectDoc, type ProjectMeta } from '../types/model';
 import { getDB } from './db';
 import { createProject, getProjectImages, getProjectMeta, loadDocument, putImage } from './projectRepo';
 
@@ -41,7 +41,7 @@ export async function exportBackup(projectId: string): Promise<File> {
   const meta = await getProjectMeta(projectId);
   const doc = await loadDocument(projectId);
   if (!meta || !doc) throw new Error('プロジェクトが見つかりません');
-  const used = new Set(doc.pages.map((p) => p.imageId));
+  const used = new Set(doc.pages.flatMap(pageImageIds));
   const images: BackupImage[] = [];
   for (const img of await getProjectImages(projectId)) {
     if (!used.has(img.id)) continue;
@@ -80,9 +80,7 @@ export async function importBackup(file: File): Promise<ProjectMeta> {
     await putImage({ id, projectId: meta.id, blob, width: img.width, height: img.height });
   }
   const doc: ProjectDoc = {
-    pages: data.doc.pages
-      .filter((p) => idMap.has(p.imageId))
-      .map((p) => ({ ...p, id: uid(), imageId: idMap.get(p.imageId)! })),
+    pages: data.doc.pages.flatMap((p) => remapPageImages(p, idMap, uid()) ?? []),
   };
   const db = await getDB();
   await db.put('documents', { projectId: meta.id, version: 1, doc });

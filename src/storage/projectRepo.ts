@@ -1,7 +1,7 @@
 // プロジェクトの CRUD。
 import { countWrittenPages } from '../lib/homeList';
 import { uid } from '../lib/id';
-import type { Page, ProjectDoc, ProjectMeta } from '../types/model';
+import { pageImageIds, remapPageImages, type Page, type ProjectDoc, type ProjectMeta } from '../types/model';
 import { getDB, type SavedHistory, type StoredDocument, type StoredImage } from './db';
 
 export async function listProjects(): Promise<ProjectMeta[]> {
@@ -121,7 +121,7 @@ export async function duplicateProject(id: string, newName: string): Promise<Pro
     await tx.objectStore('images').put({ ...img, id: nid, projectId: newId });
   }
   const doc: ProjectDoc = {
-    pages: stored.doc.pages.map((p) => ({ ...p, id: uid(), imageId: idMap.get(p.imageId) ?? p.imageId })),
+    pages: stored.doc.pages.map((p) => remapPageImages(p, idMap, uid()) ?? { ...p, id: uid() }),
   };
   const now = Date.now();
   const newMeta: ProjectMeta = { ...meta, id: newId, name: newName, createdAt: now, updatedAt: now };
@@ -145,7 +145,7 @@ export async function getProjectImages(projectId: string): Promise<StoredImage[]
 
 /** どのページ（元に戻す履歴内のページも含む）からも参照されていない画像を削除（プロジェクトを開いた時点で実行） */
 export async function collectUnusedImages(projectId: string, pages: Page[]): Promise<void> {
-  const used = new Set(pages.map((p) => p.imageId));
+  const used = new Set(pages.flatMap(pageImageIds));
   const db = await getDB();
   const tx = db.transaction('images', 'readwrite');
   let cursor = await tx.store.index('projectId').openKeyCursor(projectId);

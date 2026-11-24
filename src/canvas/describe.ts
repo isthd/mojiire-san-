@@ -10,6 +10,7 @@ import {
   isRuledText,
   type DashStyle,
   type EditorObject,
+  type ImageObject,
   type TextObject,
 } from '../types/model';
 import { layoutVertical, punctuationOffset, wrapVertical, type VerticalLayout } from './verticalText';
@@ -25,6 +26,8 @@ export interface NodeDesc {
 export interface DescribeContext {
   /** 数式の描画済み画像（未読み込みなら null） */
   mathImage: HTMLImageElement | null;
+  /** 貼り付けた画像の読み込み済みの画像（未読み込みなら null／なし） */
+  picture?: HTMLImageElement | null;
   /** 細い線でも選択しやすくするための最小当たり判定幅（画像px） */
   hitPad: number;
   /** 未入力のテキスト枠を「ダブルタップで入力」として表示する（編集画面のみ。書き出しでは表示しない） */
@@ -442,6 +445,52 @@ function ruledNodes(o: RuledText, ctx: DescribeContext): NodeDesc[] {
   return out;
 }
 
+/** 貼り付けた画像：角丸・円の切り抜き、左右反転、枠線 */
+function pictureNodes(o: ImageObject, picture: HTMLImageElement | null | undefined): NodeDesc[] {
+  const { width: w, height: h } = o;
+  const ratio = Math.min(0.5, Math.max(0, o.cornerRadius ?? 0));
+  const oval = ratio >= 0.5;
+  const radius = Math.min(w, h) * ratio;
+  const clip = (ctx: Konva.Context) => {
+    ctx.beginPath();
+    if (oval) ctx.ellipse(w / 2, h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+    else if (radius > 0) ctx.roundRect(0, 0, w, h, radius);
+    else ctx.rect(0, 0, w, h);
+    ctx.closePath();
+  };
+  const body: NodeDesc = picture
+    ? {
+        kind: 'Image',
+        config: { image: picture, width: w, height: h, ...(o.flipX ? { scaleX: -1, x: w } : {}) },
+      }
+    : { kind: 'Rect', config: { width: w, height: h, fill: 'rgba(0,0,0,0.06)' } };
+  const out: NodeDesc[] = [
+    // 切り抜きの外側は透明なので、選択・ドラッグ用の当たり判定は四角形全体で受ける
+    { kind: 'Rect', config: { width: w, height: h, fill: 'rgba(0,0,0,0.001)' } },
+    { kind: 'Group', config: oval || radius > 0 ? { clipFunc: clip } : {}, children: [body] },
+  ];
+  const bw = o.borderWidth ?? 0;
+  if (o.borderColor && bw > 0) {
+    const stroke = { stroke: o.borderColor, strokeWidth: bw, listening: false };
+    out.push(
+      oval
+        ? { kind: 'Ellipse', config: { ...stroke, x: w / 2, y: h / 2, radiusX: w / 2 - bw / 2, radiusY: h / 2 - bw / 2 } }
+        : {
+            kind: 'Rect',
+            config: {
+              ...stroke,
+              x: bw / 2,
+              y: bw / 2,
+              width: Math.max(0, w - bw),
+              height: Math.max(0, h - bw),
+              cornerRadius: Math.max(0, radius - bw / 2),
+            },
+          },
+    );
+  }
+  return out;
+}
+
 export function dashArray(dash: DashStyle, w: number): number[] | undefined {
   if (dash === 'dashed') return [w * 3, w * 2];
   if (dash === 'dotted') return [0.001, w * 2];
@@ -494,6 +543,9 @@ export function describeObject(o: EditorObject, ctx: DescribeContext): NodeDesc 
       }
       break;
     }
+    case 'image':
+      children.push(...pictureNodes(o, ctx.picture));
+      break;
     case 'pen':
     case 'highlighter': {
       children.push({

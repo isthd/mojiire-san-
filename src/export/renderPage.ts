@@ -35,12 +35,16 @@ export async function renderPageToCanvas(
   scale: number,
   opts: { background?: string } = {},
 ): Promise<HTMLCanvasElement> {
-  const [image, mathImages] = await Promise.all([
+  const [image, mathImages, pictures] = await Promise.all([
     loadPageImage(page.imageId),
     Promise.all(
       page.objects.map((o) =>
         o.type === 'math' ? getMathImage(o.latex, o.fontSize, o.color).catch(() => null) : Promise.resolve(null),
       ),
+    ),
+    // 貼り付けた画像（読み込めないものは灰色の四角で描く）
+    Promise.all(
+      page.objects.map((o) => (o.type === 'image' ? loadPageImage(o.imageId).catch(() => null) : Promise.resolve(null))),
     ),
     ensureFonts(page),
   ]);
@@ -57,7 +61,7 @@ export async function renderPageToCanvas(
     layer.add(new Konva.Image({ image, width: page.width, height: page.height }));
     page.objects.forEach((o, i) => {
       const m = mathImages[i] as MathImage | null;
-      layer.add(buildNode(describeObject(o, { mathImage: m?.img ?? null, hitPad: 0 })) as Konva.Group);
+      layer.add(buildNode(describeObject(o, { mathImage: m?.img ?? null, picture: pictures[i], hitPad: 0 })) as Konva.Group);
     });
     return layer.toCanvas({
       x: 0,

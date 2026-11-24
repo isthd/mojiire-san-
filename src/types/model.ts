@@ -10,7 +10,8 @@ export type ObjectType =
   | 'arrow'
   | 'rect'
   | 'ellipse'
-  | 'triangle';
+  | 'triangle'
+  | 'image';
 
 export type DashStyle = 'solid' | 'dashed' | 'dotted';
 export type TextAlign = 'left' | 'center' | 'right';
@@ -173,7 +174,27 @@ export interface ShapeObject extends BaseObject {
   dash: DashStyle;
 }
 
-export type EditorObject = TextObject | MathObject | StrokeObject | LineObject | ShapeObject;
+/** 貼り付けた画像（写真・イラストなど）。画像データは IndexedDB の images ストアに保存する */
+export interface ImageObject extends BaseObject {
+  type: 'image';
+  /** IndexedDB の images ストアのキー（ページの画像と同じストア） */
+  imageId: string;
+  width: number;
+  height: number;
+  /** 角の丸み（短い辺に対する比率 0〜0.5。0.5 で円・だ円に切り抜く） */
+  cornerRadius?: number;
+  /** 枠線（null／なし = なし） */
+  borderColor?: string | null;
+  borderWidth?: number;
+  /** 左右反転 */
+  flipX?: boolean;
+}
+
+export type EditorObject = TextObject | MathObject | StrokeObject | LineObject | ShapeObject | ImageObject;
+
+/** ツール設定（色・太さなど）を持つオブジェクト（貼り付けた画像以外） */
+export type StyledObject = Exclude<EditorObject, ImageObject>;
+
 
 export interface Page {
   id: string;
@@ -184,6 +205,30 @@ export interface Page {
   /** 表示用サイズ単位（長辺1000を基準とした1単位あたりの画像px） */
   unit: number;
   objects: EditorObject[];
+}
+
+/** ページで使っている画像（ページの画像と、貼り付けた画像） */
+export function pageImageIds(page: Page): string[] {
+  const ids = [page.imageId];
+  for (const o of page.objects) if (o.type === 'image') ids.push(o.imageId);
+  return ids;
+}
+
+/** 画像の ID を付け替える（複製・読み込み時）。ページの画像が見つからないときは null */
+export function remapPageImages(page: Page, idMap: Map<string, string>, newPageId: string): Page | null {
+  const imageId = idMap.get(page.imageId);
+  if (!imageId) return null;
+  return {
+    ...page,
+    id: newPageId,
+    imageId,
+    // 画像が見つからない貼り付け画像は取り除く
+    objects: page.objects.flatMap((o): EditorObject[] => {
+      if (o.type !== 'image') return [o];
+      const id = idMap.get(o.imageId);
+      return id ? [{ ...o, imageId: id }] : [];
+    }),
+  };
 }
 
 export interface ProjectDoc {

@@ -66,6 +66,14 @@ export function remapObjects(objs: EditorObject[], map: (p: Point) => Point, add
         } as EditorObject;
       case 'math':
         return { ...base, type: 'math', fontSize: sz(o.fontSize), width: sz(o.width), height: sz(o.height) } as EditorObject;
+      case 'image':
+        return {
+          ...base,
+          type: 'image',
+          width: sz(o.width),
+          height: sz(o.height),
+          ...(o.borderWidth !== undefined ? { borderWidth: sz(o.borderWidth) } : {}),
+        } as EditorObject;
       default:
         return {
           ...base,

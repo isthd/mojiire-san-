@@ -1,10 +1,21 @@
 // 画面下部の操作バー。
-// ・何も選択していないとき：［描く］［回答欄］（⊕ 文字を追加）［画像］
+// ・何も選択していないとき：［描く］［回答欄］（⊕ 文字を追加）［便箋］［画像］［ページ追加］
 // ・オブジェクト選択中：アイコンのタブ＋設定欄＋ゴミ箱
 // ・描画ツール使用中：ツール一覧＋色・太さ＋［完了］
 import {
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  ArrowDownToLine,
   Baseline,
+  BringToFront,
   CaseSensitive,
+  ChevronDown,
+  ChevronUp,
+  FlipHorizontal2,
+  Frame,
+  Image as ImageIcon,
+  Layers,
+  SquareDashed,
   Check,
   Circle,
   CopyPlus,
@@ -36,7 +47,16 @@ import { refitRuledBox } from '../../canvas/ruleFit';
 import { addTextAtCenter } from '../../canvas/textEditController';
 import { currentPageOf, selectedObjects, useEditor, type ToolType } from '../../store/editorStore';
 import { useSettings, type ToolSettings, type ToolSettingsKey } from '../../store/settingsStore';
-import { FONT_OPTIONS, isRuledText, type DashStyle, type EditorObject, type TextObject } from '../../types/model';
+import {
+  FONT_OPTIONS,
+  isRuledText,
+  type DashStyle,
+  type EditorObject,
+  type ImageObject,
+  type StyledObject,
+  type TextObject,
+} from '../../types/model';
+import { addPicturesToPage, alignToPageCenter, objectBoxSize } from './pictureActions';
 import { LetterPaper } from '../icons/LetterPaper';
 import { COLOR_SWATCHES, cx, HIGHLIGHT_SWATCHES, IconButton, NoneSwatch } from '../ui/primitives';
 
@@ -331,6 +351,7 @@ const TEXT_TABS: Tab[] = [
   { key: 'spacing', label: '文字の間隔・行の間隔', icon: UnfoldVertical },
   { key: 'outline', label: '縁取り', icon: Baseline },
   { key: 'rotate', label: '回転', icon: RotateCw },
+  { key: 'layer', label: '重なり・配置', icon: Layers },
 ];
 const RULED_TEXT_TABS: Tab[] = [{ key: 'rule', label: '便箋の線', icon: LetterPaper }, ...TEXT_TABS];
 const MATH_TABS: Tab[] = [
@@ -338,22 +359,33 @@ const MATH_TABS: Tab[] = [
   { key: 'color', label: '色', icon: Palette },
   { key: 'size', label: 'サイズ', icon: CaseSensitive },
   { key: 'rotate', label: '回転', icon: RotateCw },
+  { key: 'layer', label: '重なり・配置', icon: Layers },
 ];
 const STROKE_TABS: Tab[] = [
   { key: 'color', label: '色', icon: Palette },
   { key: 'size', label: '太さ・透明度', icon: PenLine },
+  { key: 'layer', label: '重なり', icon: Layers },
 ];
 const LINE_TABS: Tab[] = [
   { key: 'color', label: '色', icon: Palette },
   { key: 'size', label: '太さ・線種', icon: PenLine },
+  { key: 'layer', label: '重なり', icon: Layers },
 ];
 const SHAPE_TABS: Tab[] = [
   { key: 'color', label: '枠線', icon: Palette },
   { key: 'fill', label: '塗りつぶし', icon: PaintBucket },
   { key: 'rotate', label: '回転', icon: RotateCw },
+  { key: 'layer', label: '重なり・配置', icon: Layers },
+];
+const IMAGE_TABS: Tab[] = [
+  { key: 'shape', label: '形', icon: SquareDashed },
+  { key: 'border', label: '枠線', icon: Frame },
+  { key: 'adjust', label: '透明度・反転', icon: FlipHorizontal2 },
+  { key: 'rotate', label: '回転', icon: RotateCw },
+  { key: 'layer', label: '重なり・配置', icon: Layers },
 ];
 
-function tabsFor(o: EditorObject): Tab[] {
+function tabsFor(o: StyledObject): Tab[] {
   switch (o.type) {
     case 'text':
       return isRuledText(o) ? RULED_TEXT_TABS : TEXT_TABS;
@@ -368,6 +400,173 @@ function tabsFor(o: EditorObject): Tab[] {
     default:
       return SHAPE_TABS;
   }
+}
+
+/** 重なり順（前面・背面）と、ページの中央にそろえる */
+function LayerControl({ obj }: { obj: EditorObject }) {
+  const s = useEditor.getState;
+  const ids = [obj.id];
+  const btn = 'tap flex h-10 items-center gap-1.5 rounded-xl bg-neutral-100 px-3 text-[13px] font-medium hover:bg-neutral-200';
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button type="button" className={btn} onClick={() => s().reorder(ids, 'front')}>
+          <BringToFront size={17} aria-hidden /> 最前面
+        </button>
+        <button type="button" className={btn} onClick={() => s().reorder(ids, 'forward')}>
+          <ChevronUp size={17} aria-hidden /> 前へ
+        </button>
+        <button type="button" className={btn} onClick={() => s().reorder(ids, 'backward')}>
+          <ChevronDown size={17} aria-hidden /> 後ろへ
+        </button>
+        <button type="button" className={btn} onClick={() => s().reorder(ids, 'back')}>
+          <ArrowDownToLine size={17} aria-hidden /> 最背面
+        </button>
+      </div>
+      {objectBoxSize(obj) && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[12px] text-neutral-500">ページの中央</span>
+          <button type="button" className={btn} onClick={() => alignToPageCenter(ids, 'h')}>
+            <AlignCenterVertical size={17} aria-hidden /> 左右
+          </button>
+          <button type="button" className={btn} onClick={() => alignToPageCenter(ids, 'v')}>
+            <AlignCenterHorizontal size={17} aria-hidden /> 上下
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** 画像の角の丸み */
+const CORNER_OPTIONS: { value: string; label: string }[] = [
+  { value: '0', label: '四角' },
+  { value: '0.08', label: '少し丸く' },
+  { value: '0.2', label: '丸く' },
+];
+
+function cornerValue(r: number | undefined, options: { value: string }[]): string {
+  const v = r ?? 0;
+  return options.reduce(
+    (best, o) => (Math.abs(Number(o.value) - v) < Math.abs(Number(best) - v) ? o.value : best),
+    options[0].value,
+  );
+}
+
+/** 設定欄の外枠：タブ・複製・削除 */
+function InspectorFrame({
+  tabs,
+  tab,
+  onTab,
+  ids,
+  children,
+}: {
+  tabs: Tab[];
+  tab: Tab;
+  onTab: (key: string) => void;
+  ids: string[];
+  children: ReactNode;
+}) {
+  const s = useEditor.getState;
+  return (
+    <div>
+      <div className="flex h-12 items-center gap-0.5 border-b border-neutral-200 px-1.5">
+        <div role="tablist" aria-label="設定の種類" className="no-scrollbar flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+          {tabs.map((t) => (
+            <IconButton
+              key={t.key}
+              role="tab"
+              aria-selected={t.key === tab.key}
+              label={t.label}
+              active={t.key === tab.key}
+              onClick={() => onTab(t.key)}
+              className="h-10 w-11"
+            >
+              <t.icon size={21} strokeWidth={1.9} />
+            </IconButton>
+          ))}
+        </div>
+        <IconButton label="複製" onClick={() => s().duplicate(ids)} className="h-10 w-11">
+          <CopyPlus size={20} />
+        </IconButton>
+        <IconButton label="削除" onClick={() => s().deleteObjects(ids)} className="h-10 w-11 text-[#ff3b30]">
+          <Trash2 size={20} />
+        </IconButton>
+      </div>
+      <div className="px-3 pt-1 text-[11px] font-medium text-neutral-500">{tab.label}</div>
+      <div className="flex min-h-[56px] flex-wrap items-center gap-x-4 gap-y-2 px-3 pt-1 pb-2">{children}</div>
+    </div>
+  );
+}
+
+/** 貼り付けた画像の設定 */
+function ImageInspector({ obj }: { obj: ImageObject }) {
+  const [tabKey, setTabKey] = useState(IMAGE_TABS[0].key);
+  const tab = IMAGE_TABS.find((t) => t.key === tabKey) ?? IMAGE_TABS[0];
+  const update = (patch: Partial<ImageObject>) =>
+    useEditor.getState().updateObjects({ [obj.id]: patch }, `image-${obj.id}-${Object.keys(patch).join()}`);
+  const short = Math.min(obj.width, obj.height);
+  const bw = obj.borderWidth ?? 0;
+  const hasBorder = !!obj.borderColor && bw > 0;
+  const shapeOptions = [...CORNER_OPTIONS, { value: '0.5', label: '円' }];
+
+  let content: ReactNode;
+  if (tab.key === 'shape')
+    content = (
+      <Chips
+        label="切り抜き"
+        value={cornerValue(obj.cornerRadius, shapeOptions)}
+        options={shapeOptions}
+        onChange={(v) => update({ cornerRadius: Number(v) })}
+      />
+    );
+  else if (tab.key === 'border')
+    content = (
+      <>
+        <Switch
+          label="枠線"
+          checked={hasBorder}
+          onChange={(on) =>
+            update(on ? { borderColor: obj.borderColor ?? '#ffffff', borderWidth: bw || short * 0.03 } : { borderColor: null })
+          }
+        />
+        {hasBorder && (
+          <>
+            <SwatchRow label="枠線の色" value={obj.borderColor!} onChange={(c) => c && update({ borderColor: c })} />
+            <Stepper
+              label="太さ"
+              value={(bw / short) * 100}
+              step={1}
+              min={0.5}
+              max={25}
+              suffix="%"
+              onChange={(v) => update({ borderWidth: (short * v) / 100 })}
+            />
+          </>
+        )}
+      </>
+    );
+  else if (tab.key === 'adjust')
+    content = (
+      <>
+        <OpacityChips label="透明度" value={obj.opacity} onChange={(opacity) => update({ opacity })} />
+        <button
+          type="button"
+          onClick={() => update({ flipX: !obj.flipX })}
+          className="tap flex h-10 items-center gap-1.5 rounded-xl bg-neutral-100 px-3 text-[14px] font-medium hover:bg-neutral-200"
+        >
+          <FlipHorizontal2 size={17} aria-hidden /> 左右反転
+        </button>
+      </>
+    );
+  else if (tab.key === 'rotate') content = <RotateControl obj={obj} />;
+  else content = <LayerControl obj={obj} />;
+
+  return (
+    <InspectorFrame tabs={IMAGE_TABS} tab={tab} onTab={setTabKey} ids={[obj.id]}>
+      {content}
+    </InspectorFrame>
+  );
 }
 
 function RotateControl({ obj }: { obj: EditorObject }) {
@@ -421,7 +620,7 @@ function RuleControl({ obj, unit }: { obj: TextObject & { ruleGap: number }; uni
   );
 }
 
-function ObjectInspector({ obj }: { obj: EditorObject }) {
+function ObjectInspector({ obj }: { obj: StyledObject }) {
   const tabs = tabsFor(obj);
   const [tabKey, setTabKey] = useState(tabs[0].key);
   const tab = tabs.find((t) => t.key === tabKey) ?? tabs[0];
@@ -440,6 +639,7 @@ function ObjectInspector({ obj }: { obj: EditorObject }) {
 
   let content: ReactNode = null;
   if (tab.key === 'rotate') content = <RotateControl obj={obj} />;
+  else if (tab.key === 'layer') content = <LayerControl obj={obj} />;
   else if (tab.key === 'rule' && isRuledText(obj)) content = <RuleControl obj={obj} unit={unit} />;
   else if (obj.type === 'text') {
     const t = v as ToolSettings['text'];
@@ -584,33 +784,9 @@ function ObjectInspector({ obj }: { obj: EditorObject }) {
   }
 
   return (
-    <div>
-      <div className="flex h-12 items-center gap-0.5 border-b border-neutral-200 px-1.5">
-        <div role="tablist" aria-label="設定の種類" className="no-scrollbar flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
-          {tabs.map((t) => (
-            <IconButton
-              key={t.key}
-              role="tab"
-              aria-selected={t.key === tab.key}
-              label={t.label}
-              active={t.key === tab.key}
-              onClick={() => setTabKey(t.key)}
-              className="h-10 w-11"
-            >
-              <t.icon size={21} strokeWidth={1.9} />
-            </IconButton>
-          ))}
-        </div>
-        <IconButton label="複製" onClick={() => s().duplicate([obj.id])} className="h-10 w-11">
-          <CopyPlus size={20} />
-        </IconButton>
-        <IconButton label="削除" onClick={() => s().deleteObjects([obj.id])} className="h-10 w-11 text-[#ff3b30]">
-          <Trash2 size={20} />
-        </IconButton>
-      </div>
-      <div className="px-3 pt-1 text-[11px] font-medium text-neutral-500">{tab.label}</div>
-      <div className="flex min-h-[56px] flex-wrap items-center gap-x-4 gap-y-2 px-3 pt-1 pb-2">{content}</div>
-    </div>
+    <InspectorFrame tabs={tabs} tab={tab} onTab={setTabKey} ids={[obj.id]}>
+      {content}
+    </InspectorFrame>
   );
 }
 
@@ -768,28 +944,31 @@ function RuledBar() {
 
 // ===== 何も選択していないとき =====
 
-function IdleBar({ onAddImages }: { onAddImages: () => void }) {
+function IdleBar({ onAddImages, onPickPicture }: { onAddImages: () => void; onPickPicture: () => void }) {
   const setTool = useEditor((s) => s.setTool);
   const tool = 'tap flex h-12 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1.5 text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900';
   const label = 'text-[11px] font-medium whitespace-nowrap';
   return (
-    <div className="grid h-[72px] grid-cols-[1fr_1fr_auto_1fr_1fr] items-center justify-items-center px-3">
-      <button type="button" onClick={() => setTool('pen')} className={tool}>
-        <Pen size={22} aria-hidden />
-        <span className={label}>
-          描く<span className="hidden min-[400px]:inline">・図形</span>
-        </span>
-      </button>
-      <button
-        type="button"
-        title="画像の回答欄を探して文字枠を自動で置く"
-        aria-label="回答欄に文字枠を自動で置く"
-        onClick={() => void autoPlaceAnswerFields()}
-        className={tool}
-      >
-        <ScanText size={22} aria-hidden />
-        <span className={label}>回答欄</span>
-      </button>
+    // 左右のボタンの数が違っても ⊕ が真ん中に来るよう、左右を同じ幅の欄にして中で等分する
+    <div className="grid h-[72px] grid-cols-[1fr_auto_1fr] items-center px-3">
+      <div className="flex items-center justify-around">
+        <button type="button" onClick={() => setTool('pen')} className={tool}>
+          <Pen size={22} aria-hidden />
+          <span className={label}>
+            描く<span className="hidden min-[400px]:inline">・図形</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          title="画像の回答欄を探して文字枠を自動で置く"
+          aria-label="回答欄に文字枠を自動で置く"
+          onClick={() => void autoPlaceAnswerFields()}
+          className={tool}
+        >
+          <ScanText size={22} aria-hidden />
+          <span className={label}>回答欄</span>
+        </button>
+      </div>
       <button
         type="button"
         aria-label="文字を追加"
@@ -799,21 +978,27 @@ function IdleBar({ onAddImages }: { onAddImages: () => void }) {
       >
         <Plus size={30} strokeWidth={2.4} />
       </button>
-      <button
-        type="button"
-        title="便箋・ノートの罫線に合わせて文字を書く枠を置く"
-        onClick={() => setTool('ruled')}
-        className={tool}
-      >
-        <LetterPaper size={22} aria-hidden />
-        <span className={label}>便箋</span>
-      </button>
-      <button type="button" onClick={onAddImages} className={tool}>
-        <ImagePlus size={22} aria-hidden />
-        <span className={label}>
-          <span className="hidden min-[400px]:inline">ページ</span>追加
-        </span>
-      </button>
+      <div className="flex items-center justify-around">
+        <button
+          type="button"
+          title="便箋・ノートの罫線に合わせて文字を書く枠を置く"
+          onClick={() => setTool('ruled')}
+          className={tool}
+        >
+          <LetterPaper size={22} aria-hidden />
+          <span className={label}>便箋</span>
+        </button>
+        <button type="button" title="写真・イラストをページの上に貼る" onClick={onPickPicture} className={tool}>
+          <ImageIcon size={22} aria-hidden />
+          <span className={label}>画像</span>
+        </button>
+        <button type="button" onClick={onAddImages} className={tool}>
+          <ImagePlus size={22} aria-hidden />
+          <span className={label}>
+            <span className="hidden min-[400px]:inline">ページ</span>追加
+          </span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -822,14 +1007,17 @@ export function BottomBar({ onAddImages, joined = false }: { onAddImages: () => 
   const tool = useEditor((s) => s.tool);
   const objs = useEditor(useShallow((s) => selectedObjects(s)));
   const hasPages = useEditor((s) => s.history.present.pages.length > 0);
+  const pictureRef = useRef<HTMLInputElement>(null);
   if (!hasPages) return null;
+  const one = objs.length === 1 ? objs[0] : null;
 
   let body: ReactNode;
   if (tool === 'ruled') body = <RuledBar />;
   else if (tool !== 'select' && tool !== 'hand' && tool !== 'text' && tool !== 'math') body = <DrawBar />;
-  else if (objs.length === 1) body = <ObjectInspector key={objs[0].id} obj={objs[0]} />;
+  else if (one?.type === 'image') body = <ImageInspector key={one.id} obj={one} />;
+  else if (one) body = <ObjectInspector key={one.id} obj={one} />;
   else if (objs.length > 1) body = <MultiInspector ids={objs.map((o) => o.id)} />;
-  else body = <IdleBar onAddImages={onAddImages} />;
+  else body = <IdleBar onAddImages={onAddImages} onPickPicture={() => pictureRef.current?.click()} />;
 
   return (
     <div
@@ -838,6 +1026,17 @@ export function BottomBar({ onAddImages, joined = false }: { onAddImages: () => 
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <div className="mx-auto w-full max-w-3xl">{body}</div>
+      <input
+        ref={pictureRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          void addPicturesToPage(e.target.files);
+          e.target.value = '';
+        }}
+      />
     </div>
   );
 }

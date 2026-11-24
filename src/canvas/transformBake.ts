@@ -66,6 +66,17 @@ export function bakeTransform(
         },
         node: { ...base, scaleX: 1, scaleY: 1 },
       };
+    case 'image':
+      // 写真は縦横比を保って拡大・縮小する（四隅のハンドルのみ）
+      return {
+        patch: {
+          ...base,
+          width: Math.max(1, obj.width * sx),
+          height: Math.max(1, obj.height * sy),
+          ...(obj.borderWidth ? { borderWidth: obj.borderWidth * s } : {}),
+        },
+        node: { ...base, scaleX: 1, scaleY: 1 },
+      };
     case 'math':
       return {
         patch: { ...base, fontSize: obj.fontSize * s, width: obj.width * s, height: obj.height * s },

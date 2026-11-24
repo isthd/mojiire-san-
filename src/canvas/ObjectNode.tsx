@@ -1,6 +1,7 @@
 // 1つのオブジェクトを react-konva で描画する。記述（describe.ts）は書き出しと共通。
 import { memo, useEffect, useMemo, useState, type ReactElement } from 'react';
 import { Arrow, Ellipse, Group, Image as KImage, Line, Rect, Shape, Text } from 'react-konva';
+import { usePageImage } from '../hooks/usePageImage';
 import { getMathImage, peekMathImage } from '../math/mathRenderer';
 import type { EditorObject } from '../types/model';
 import { describeObject, type NodeDesc, type NodeKind } from './describe';
@@ -55,10 +56,11 @@ interface Props {
 
 export const ObjectNode = memo(function ObjectNode({ obj, hitPad, hidden, draggable, selected, epoch }: Props) {
   const mathImage = useMathImage(obj);
+  const { image: picture } = usePageImage(obj.type === 'image' ? obj.imageId : undefined);
   const desc = useMemo(
-    () => describeObject(obj, { mathImage, hitPad, placeholder: true, selected }),
+    () => describeObject(obj, { mathImage, picture, hitPad, placeholder: true, selected }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [obj, mathImage, hitPad, selected, epoch],
+    [obj, mathImage, picture, hitPad, selected, epoch],
   );
   return (
     <Group {...desc.config} visible={!hidden} draggable={draggable && !obj.locked}>

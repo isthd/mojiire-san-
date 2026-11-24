@@ -23,7 +23,7 @@ import {
 import { countWrittenPages, pickExtraMeta, readExtraMeta, type ExtraMeta } from '../lib/homeList';
 import { uid } from '../lib/id';
 import { createZip, readZip, type ZipEntry } from '../lib/zip';
-import type { ProjectDoc, ProjectMeta } from '../types/model';
+import { pageImageIds, remapPageImages, type ProjectDoc, type ProjectMeta } from '../types/model';
 import { importBackup } from './backup';
 import { getDB } from './db';
 import { findOrCreateFolder, listFolders } from './folderRepo';
@@ -70,8 +70,8 @@ export async function buildBundle(projectId: string, folderName: string | null):
   const images: FolderProjectFile['images'] = [];
   const done = new Set<string>();
   let n = 0;
-  for (const page of doc.pages) {
-    const img = stored.get(page.imageId);
+  for (const imageId of doc.pages.flatMap(pageImageIds)) {
+    const img = stored.get(imageId);
     if (!img || done.has(img.id)) continue;
     done.add(img.id);
     const file = `images/${String(++n).padStart(2, '0')}.${imageExt(img.blob.type)}`;
@@ -251,9 +251,7 @@ async function importOne(
     images.push({ id: nid, blob: blob.type ? blob : new Blob([blob], { type }), width: img.width, height: img.height });
   }
   const doc: ProjectDoc = {
-    pages: data.doc.pages
-      .filter((p) => idMap.has(p.imageId))
-      .map((p) => ({ ...p, id: uid(), imageId: idMap.get(p.imageId)! })),
+    pages: data.doc.pages.flatMap((p) => remapPageImages(p, idMap, uid()) ?? []),
   };
   if (data.doc.pages.length && !doc.pages.length) throw new Error('画像が見つかりません');
 

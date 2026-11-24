@@ -193,6 +193,8 @@ export const useEditor = create<EditorState>()((set, get) => {
         modal: null,
         saveStatus: 'saved',
         pasteCount: 0,
+        // 貼り付けた画像は元のプロジェクトに保存されているので、別のプロジェクトへは持ち越さない
+        clipboard: get().clipboard.filter((o) => o.type !== 'image'),
       }),
     closeProject: () =>
       set({
