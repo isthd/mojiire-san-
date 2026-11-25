@@ -25,7 +25,11 @@ async function doSave(): Promise<void> {
     if (!pending) setSaveStatus('saved');
   } catch (e) {
     console.error(e);
+    // 保存できなかった内容は捨てずに残し、次の保存（Ctrl+S・画面を閉じたときなど）でもう一度試す。
+    // その間に新しい編集があれば、そちらの方が新しいので上書きしない。
+    if (!pending) pending = job;
     setSaveStatus('error');
+    throw new Error('編集内容を保存できませんでした');
   }
 }
 
@@ -44,10 +48,17 @@ async function doThumbnail(projectId: string, doc: ProjectDoc): Promise<void> {
   }
 }
 
-/** 保留中の変更を直ちに保存 */
+/** 保留中の変更を直ちに保存する。保存に失敗したときは reject する */
 export function flushSave(): Promise<void> {
-  saving = saving.then(doSave);
-  return saving;
+  // 前の保存が失敗していても、続けて次の保存を行えるようにする
+  const job = saving.catch(() => undefined).then(doSave);
+  saving = job;
+  return job;
+}
+
+/** 結果を待たない保存（失敗は画面上部の「保存に失敗」表示で知らせる） */
+function flushSaveQuietly(): Promise<void> {
+  return flushSave().catch(() => undefined);
 }
 
 export function startAutosave(): () => void {
@@ -58,15 +69,15 @@ export function startAutosave(): () => void {
     pending = { projectId, doc, history: { past: s.history.past, future: s.history.future } };
     s.setSaveStatus('saving');
     if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => void flushSave(), SAVE_DELAY);
+    saveTimer = setTimeout(() => void flushSaveQuietly(), SAVE_DELAY);
     if (thumbTimer) clearTimeout(thumbTimer);
     thumbTimer = setTimeout(() => void doThumbnail(projectId, useEditor.getState().history.present), THUMB_DELAY);
   });
 
   const onHide = () => {
-    if (document.visibilityState === 'hidden') void flushSave();
+    if (document.visibilityState === 'hidden') void flushSaveQuietly();
   };
-  const onPageHide = () => void flushSave();
+  const onPageHide = () => void flushSaveQuietly();
   document.addEventListener('visibilitychange', onHide);
   window.addEventListener('pagehide', onPageHide);
 
@@ -74,7 +85,7 @@ export function startAutosave(): () => void {
     unsub();
     document.removeEventListener('visibilitychange', onHide);
     window.removeEventListener('pagehide', onPageHide);
-    const jobs: Promise<void>[] = [flushSave()];
+    const jobs: Promise<void>[] = [flushSaveQuietly()];
     if (thumbTimer) {
       clearTimeout(thumbTimer);
       thumbTimer = null;

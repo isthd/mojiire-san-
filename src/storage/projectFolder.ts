@@ -59,6 +59,14 @@ export interface ProjectBundle {
   folderName: string | null;
   /** プロジェクトのフォルダ内でのパス → 中身 */
   files: { path: string; data: Blob }[];
+  /** project.json の中身（フォルダへ上書きするとき、画像の名前を変えて書き直すため） */
+  project: FolderProjectFile;
+}
+
+const IMAGES_DIR = 'images';
+
+function projectBlob(data: FolderProjectFile): Blob {
+  return new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
 }
 
 export async function buildBundle(projectId: string, folderName: string | null): Promise<ProjectBundle> {
@@ -74,7 +82,7 @@ export async function buildBundle(projectId: string, folderName: string | null):
     const img = stored.get(imageId);
     if (!img || done.has(img.id)) continue;
     done.add(img.id);
-    const file = `images/${String(++n).padStart(2, '0')}.${imageExt(img.blob.type)}`;
+    const file = `${IMAGES_DIR}/${String(++n).padStart(2, '0')}.${imageExt(img.blob.type)}`;
     images.push({ id: img.id, file, width: img.width, height: img.height });
     files.push({ path: file, data: img.blob });
   }
@@ -90,10 +98,10 @@ export async function buildBundle(projectId: string, folderName: string | null):
     doc,
     meta: pickExtraMeta(meta),
   };
-  files.unshift({ path: PROJECT_FILE, data: new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }) });
+  files.unshift({ path: PROJECT_FILE, data: projectBlob(data) });
   if (meta.thumbnail) files.push({ path: 'thumbnail.jpg', data: meta.thumbnail });
   files.push({ path: 'README.txt', data: new Blob([README], { type: 'text/plain' }) });
-  return { id: meta.id, name: meta.name, folderName, files };
+  return { id: meta.id, name: meta.name, folderName, files, project: data };
 }
 
 export interface SaveTarget {
@@ -161,6 +169,7 @@ export async function writeBundles(
     const base = safeDirName(b.name);
     let name = base;
     let dir: FileSystemDirectoryHandle | null = null;
+    let overwrite = false;
     for (let n = 2; ; n++) {
       if (!set.has(name)) {
         const existing = await tryGetDir(parent, name);
@@ -180,20 +189,66 @@ export async function writeBundles(
           /* 読めなければ別のもの扱い */
         }
         if (sameProject) {
-          // 前回保存した画像を消してから書き直す（ページを削除した場合に古い画像が残らないように）
-          await existing.removeEntry('images', { recursive: true }).catch(() => undefined);
           dir = existing;
+          overwrite = true;
           break;
         }
       }
       name = `${base} (${n})`;
     }
     set.add(name);
-    for (const f of b.files) await writeFileAt(dir, f.path, f.data);
+    if (overwrite) await overwriteBundle(dir, b);
+    else for (const f of b.files) await writeFileAt(dir, f.path, f.data);
     written.push(parentName ? `${parentName}/${name}` : name);
   }
   onProgress?.(bundles.length, bundles.length);
   return written;
+}
+
+/**
+ * 前に保存したフォルダへ上書きする。
+ * 途中で失敗しても前回の保存が壊れないように、
+ *   1. 新しい画像は、今ある画像と重ならない名前で書く
+ *   2. すべて書けたら、最後に project.json を書き換える（ここで新しい保存に切り替わる）
+ *   3. 使わなくなった古い画像を消す
+ * の順に行う。
+ */
+async function overwriteBundle(dir: FileSystemDirectoryHandle, b: ProjectBundle): Promise<void> {
+  const imagesDir = await tryGetDir(dir, IMAGES_DIR);
+  const oldNames = new Set<string>();
+  if (imagesDir && imagesDir !== 'file') {
+    for await (const h of (imagesDir as DirHandle).values()) oldNames.add(h.name);
+  }
+
+  const prefix = `${IMAGES_DIR}/`;
+  const renamed = new Map<string, string>();
+  const newNames = new Set<string>();
+  for (const img of b.project.images) {
+    const file = img.file.slice(prefix.length);
+    const dot = file.lastIndexOf('.');
+    const stem = dot < 0 ? file : file.slice(0, dot);
+    const ext = dot < 0 ? '' : file.slice(dot);
+    let next = file;
+    for (let n = 2; oldNames.has(next) || newNames.has(next); n++) next = `${stem}-${n}${ext}`;
+    newNames.add(next);
+    renamed.set(img.file, prefix + next);
+  }
+  const project: FolderProjectFile = {
+    ...b.project,
+    images: b.project.images.map((img) => ({ ...img, file: renamed.get(img.file) ?? img.file })),
+  };
+
+  for (const f of b.files) {
+    if (f.path === PROJECT_FILE) continue;
+    await writeFileAt(dir, renamed.get(f.path) ?? f.path, f.data);
+  }
+  await writeFileAt(dir, PROJECT_FILE, projectBlob(project));
+
+  if (imagesDir && imagesDir !== 'file') {
+    for (const old of oldNames) {
+      if (!newNames.has(old)) await imagesDir.removeEntry(old, { recursive: true }).catch(() => undefined);
+    }
+  }
 }
 
 // ---- 読み込み ----

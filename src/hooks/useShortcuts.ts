@@ -55,7 +55,10 @@ export function useShortcuts(): void {
           }
         } else if (key === 's') {
           st.commitTextEdit();
-          void flushSave().then(() => toast('保存しました'));
+          void flushSave().then(
+            () => toast('保存しました'),
+            () => toast('保存できませんでした。端末の空き容量を確認して、もう一度 Ctrl+S を押してください', 'error'),
+          );
         } else if (key === '0') fitToScreen();
         else if (key === '1') zoomTo(1);
         else if (key === '=' || key === '+' || key === ';') zoomBy(1.25);
