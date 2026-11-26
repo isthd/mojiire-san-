@@ -54,12 +54,22 @@ export function TopBar({ onHome, onAddImages }: { onHome: () => void; onAddImage
     { label: '使い方動画', action: openHowToVideo },
   ];
 
+  const barHeight = 'calc(52px + env(safe-area-inset-top))';
   return (
-    // iPhone / iPad の Safari は、画面上端に「上端に貼りついた不透明なバー」が見つからないと、
-    // 上端をぼかして白くかすませる（スクロール端の効果）。sticky top-0 で上端のバーとして認識させる。
+    <>
+    {/* バー本体は position: fixed なので、同じ高さの空きを置いて下の内容が隠れないようにする */}
+    <div aria-hidden className="shrink-0" style={{ height: barHeight }} />
+    {/* iPhone / iPad の Safari（iOS 26 以降）は、画面上端に「画面に固定された不透明なバー」が見つからないと、
+        上端（ステータスバーからツールバーのあたり）をぼかして白くかすませる。
+        バーを画面上端に position: fixed で置くと、Safari がバーの色で上端を塗り、ぼかさなくなる。 */}
     <header
-      className="sticky top-0 z-20 flex shrink-0 items-center gap-1 bg-white px-2"
-      style={{ paddingTop: 'env(safe-area-inset-top)', height: 'calc(52px + env(safe-area-inset-top))' }}
+      className="fixed inset-x-0 top-0 z-20 flex items-center gap-1 bg-white px-2"
+      style={{
+        paddingTop: 'env(safe-area-inset-top)',
+        paddingLeft: 'max(0.5rem, env(safe-area-inset-left))',
+        paddingRight: 'max(0.5rem, env(safe-area-inset-right))',
+        height: barHeight,
+      }}
     >
       <IconButton label="閉じる（ホームへ）" onClick={onHome} className="h-11 w-11">
         <X size={24} strokeWidth={1.8} />
@@ -127,5 +137,6 @@ export function TopBar({ onHome, onAddImages }: { onHome: () => void; onAddImage
         }}
       />
     </header>
+    </>
   );
 }
