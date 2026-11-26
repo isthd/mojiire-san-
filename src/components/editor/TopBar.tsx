@@ -55,8 +55,10 @@ export function TopBar({ onHome, onAddImages }: { onHome: () => void; onAddImage
   ];
 
   return (
+    // iPhone / iPad の Safari は、画面上端に「上端に貼りついた不透明なバー」が見つからないと、
+    // 上端をぼかして白くかすませる（スクロール端の効果）。sticky top-0 で上端のバーとして認識させる。
     <header
-      className="z-20 flex shrink-0 items-center gap-1 bg-white px-2"
+      className="sticky top-0 z-20 flex shrink-0 items-center gap-1 bg-white px-2"
       style={{ paddingTop: 'env(safe-area-inset-top)', height: 'calc(52px + env(safe-area-inset-top))' }}
     >
       <IconButton label="閉じる（ホームへ）" onClick={onHome} className="h-11 w-11">

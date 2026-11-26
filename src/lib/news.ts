@@ -23,6 +23,12 @@ export interface NewsEntry {
 
 export const NEWS: NewsEntry[] = [
   {
+    id: 29,
+    date: '2026-11-26',
+    features: [],
+    fixes: ['iPhone・iPad で、編集画面のいちばん上（ツールバーのあたり）が白くぼやけて見えることがあったのを直しました。'],
+  },
+  {
     id: 28,
     date: '2026-11-25',
     features: [],

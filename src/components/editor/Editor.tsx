@@ -38,6 +38,15 @@ export function Editor({ projectId, onHome }: { projectId: string; onHome: () =>
   const [addOpen, setAddOpen] = useState(false);
   const pageCount = useEditor((s) => s.history.present.pages.length);
   const hasPages = pageCount > 0;
+
+  // 編集中はページの背景を上のバーと同じ白にする。iPhone / iPad の Safari は上端（ステータスバーまわり）を
+  // ページの背景色で塗るため、灰色のままだとツールバーの上が白くぼやけたように見える。
+  useEffect(() => {
+    const els = [document.documentElement, document.body];
+    const prev = els.map((el) => el.style.backgroundColor);
+    els.forEach((el) => (el.style.backgroundColor = '#ffffff'));
+    return () => els.forEach((el, i) => (el.style.backgroundColor = prev[i]));
+  }, []);
   const mathOpen = useEditor((s) => !!s.mathEdit);
   useShortcuts();
 
